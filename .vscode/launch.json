@@ -8,9 +8,10 @@
             "type": "lldb",
             "request": "launch",
             "name": "Run App Debug",
-            "program": "${workspaceFolder}/build/app",
+            "program": "${workspaceFolder}/build/stb-image",
             "args": [
-                "${workspaceFolder}/assets/images/shinigami-small.jpg"
+                "${workspaceFolder}/images/hidden-shoe.psd",
+                "${workspaceFolder}/output-shoe.png",
             ],
             "cwd": "${workspaceFolder}/build",
             "preLaunchTask": "Build Debug"

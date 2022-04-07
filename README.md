@@ -10,7 +10,7 @@ make
 ```
 # Run app
 ```
-./app input.psd output.png
+./app input.jpg output.png
 ```
 # build for Web Assembly (WASM)
 ```

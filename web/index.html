@@ -6,7 +6,8 @@
         <input type="file" id="imageFile">
         <img id="rendition" />
         <script>
-            let rootDir = '/persistent'
+            let rootDir = '/persistent';
+            let startTime, endTime;
             document.addEventListener('DOMContentLoaded', () => {
                 document.querySelector('#imageFile').addEventListener('change', handleFileInput);
             });
@@ -15,12 +16,14 @@
                 let reader = new FileReader();
                 reader.readAsArrayBuffer(file);
                 reader.onload = (e) => {
+
                     let bits = e.target.result;
                     let inputFileName = rootDir + '/input.psd';
                     let outputFileName = rootDir + '/output.png';
+                    console.log("handleFileInput: ", inputFileName);
+                    startTime = new Date();
                     let stream = FS.open(inputFileName, 'w');
                     let array = new Int8Array(bits);
-                    console.log("start", new Date());
                     FS.write(stream, array, 0, array.length, 0);
                     FS.close(stream);
                     FS.syncfs(false, (err) => {
@@ -38,7 +41,11 @@
                 let r = await Module.generate_rendition_using_idb(inputFileName, outputFileName);
                 let width = await Module.get_width();
                 let height = await Module.get_height();
-                console.log("end", new Date());
+
+                endTime = new Date();
+                let duration = endTime - startTime;
+                console.log("width: ", width, " height: ", height);
+                console.log("duration: ", duration, " milliseconds");
                 FS.syncfs(false, async (err) => {
                     if(err){
                         console.error("err:", err);

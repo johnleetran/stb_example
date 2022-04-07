@@ -25,15 +25,16 @@ int EMSCRIPTEN_KEEPALIVE generate_rendition_using_idb(std::string input_image_pa
 
     if (img == NULL)
     {
-        std::cout << "error loading: " << output_image_path << std::endl;
+        std::cout << "STB error loading: " << output_image_path << std::endl;
         return 2;
     }
-    std::cout << "image loaded" << std::endl;
+    std::cout << "STB image loaded" << std::endl;
 
-    std::cout << "write output to: " << output_image_path << std::endl;
-    // stbi_write_jpg(output_image_path.c_str(), width, height, channels, img, 100);
+    std::cout << "STB write output to: " << output_image_path << std::endl;
     gWidth = width;
     gHeight = height;
+    // return stbi_write_jpg(output_image_path.c_str(), width, height, channels, img, 100);
+    // stbi_write_png_compression_level = 20;
     return stbi_write_png(output_image_path.c_str(), width, height, channels, img, 0);
 }
 
@@ -50,7 +51,7 @@ int EMSCRIPTEN_KEEPALIVE get_height()
 #if __EMSCRIPTEN__
 int EMSCRIPTEN_KEEPALIVE main(int argc, char *argv[])
 {
-    std::cout << "c++ has loaded" << std::endl;
+    std::cout << "STB c++ has loaded" << std::endl;
 }
 EMSCRIPTEN_BINDINGS(generate_rendition_using_idb)
 {
@@ -60,9 +61,9 @@ EMSCRIPTEN_BINDINGS(generate_rendition_using_idb)
 }
 #else
 int main(int argc, char* argv[]){
-    std::cout << "c++ has loaded" << std::endl;  
+    std::cout << "STB c++ has loaded" << std::endl;
     if(argc < 3){
-        std::cout << "usage: ./app input.psd output.png" << std::endl;
+        std::cout << "STB usage: ./app input.psd output.png" << std::endl;
         return 1;
     }
     std::string input_image_path = std::string(argv[1]);

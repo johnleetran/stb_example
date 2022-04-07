@@ -20,6 +20,7 @@
                     let outputFileName = rootDir + '/output.png';
                     let stream = FS.open(inputFileName, 'w');
                     let array = new Int8Array(bits);
+                    console.log("start", new Date());
                     FS.write(stream, array, 0, array.length, 0);
                     FS.close(stream);
                     FS.syncfs(false, (err) => {
@@ -34,7 +35,6 @@
             }
 
             async function generate_rendition(inputFileName, outputFileName){
-                console.log("start", new Date());
                 let r = await Module.generate_rendition_using_idb(inputFileName, outputFileName);
                 let width = await Module.get_width();
                 let height = await Module.get_height();

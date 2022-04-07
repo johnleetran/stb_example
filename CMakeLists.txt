@@ -13,8 +13,13 @@ if(CMAKE_BUILD_TYPE MATCHES Release)
     set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 endif()
 
-# add_executable(${PROJECT_NAME} main.cpp)
-add_library(${PROJECT_NAME} STATIC main.cpp)
+if(WASM)
+   message(STATUS "WEB ASSEMBLY TARGET IS ON")
+   add_library(${PROJECT_NAME} STATIC main.cpp)
+else()
+   message(STATUS "Building for desktop")
+    add_executable(${PROJECT_NAME} main.cpp)
+endif()
 
 target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC
                            "includes"

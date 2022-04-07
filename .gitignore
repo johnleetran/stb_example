@@ -4,3 +4,4 @@ images
 *.psd
 *.jpg
 *.jpeg
+*.debug.wasm

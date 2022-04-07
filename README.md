@@ -1,6 +1,11 @@
 # STB Image Example
 STB Lib can be found at https://github.com/nothings/stb
 
+# Install Emscripten
+https://emscripten.org/docs/getting_started/downloads.html
+
+The example was tested with 3.1.8
+
 # Build with cmake
 ```
 mkdir build

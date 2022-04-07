@@ -1,0 +1,13 @@
+{
+    "files.associations": {
+        "*.tcc": "cpp",
+        "vector": "cpp",
+        "deque": "cpp",
+        "list": "cpp",
+        "string": "cpp",
+        "__locale": "cpp",
+        "ios": "cpp",
+        "cmath": "cpp",
+        "iosfwd": "cpp"
+    }
+}

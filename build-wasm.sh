@@ -1,11 +1,21 @@
 #!/bin/bash
+set -x
+set -e
+
+build_type=${1:-Release}
+wasm_optimization_level="-g2"
+
+if [ "$build_type" = "Debug" ]; then
+    echo "<<<<<< ${build_type} <<<<<<"
+    wasm_optimization_level="-g"
+fi
 
 pushd .
 rm -rf build
 mkdir -p build
 cd build
-emcmake cmake -DCMAKE_BUILD_TYPE=Release -DWASM=1 ..
+emcmake cmake -DCMAKE_BUILD_TYPE=${build_type} -DWASM=1 ..
 emmake make
-em++ -g2 libstb-image.a -o app.html --bind -lidbfs.js -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=4GB -s FORCE_FILESYSTEM=1
+em++ ${wasm_optimization_level} libstb-image.a -o app.html --bind -lidbfs.js -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=4GB -s FORCE_FILESYSTEM=1
 cp -r app.* ../web
 popd 

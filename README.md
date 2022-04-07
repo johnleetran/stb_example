@@ -17,3 +17,8 @@ make
 chmod +x build-wasm.sh
 ./build-wasm.sh
 ```# stb_example
+
+# build for Web Assembly (WASM) Debug
+```
+./build-wasm.sh Debug
+```

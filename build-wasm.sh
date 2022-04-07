@@ -4,10 +4,10 @@ set -e
 
 build_type=${1:-Release}
 wasm_optimization_level="-g2"
-
+app_name="app"
 if [ "$build_type" = "Debug" ]; then
     echo "<<<<<< ${build_type} <<<<<<"
-    wasm_optimization_level="-g"
+    wasm_optimization_level="-gseparate-dwarf=${app_name}.debug.wasm"
 fi
 
 pushd .
@@ -16,6 +16,6 @@ mkdir -p build
 cd build
 emcmake cmake -DCMAKE_BUILD_TYPE=${build_type} -DWASM=1 ..
 emmake make
-em++ ${wasm_optimization_level} libstb-image.a -o app.html --bind -lidbfs.js -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=4GB -s FORCE_FILESYSTEM=1
-cp -r app.* ../web
+em++ ${wasm_optimization_level} libstb-image.a -o ${app_name}.html --bind -lidbfs.js -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=4GB -s FORCE_FILESYSTEM=1 
+cp -r ${app_name}.* ../web
 popd 

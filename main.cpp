@@ -68,6 +68,7 @@ int main(int argc, char* argv[]){
     }
     std::string input_image_path = std::string(argv[1]);
     std::string output_image_path = std::string(argv[2]);
-    return generate_rendition_using_idb(input_image_path, output_image_path);
+    generate_rendition_using_idb(input_image_path, output_image_path);
+    return 0; 
 }
 #endif //__EMSCRIPTEN__

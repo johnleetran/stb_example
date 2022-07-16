@@ -16,6 +16,6 @@ mkdir -p build
 cd build
 emcmake cmake -DCMAKE_BUILD_TYPE=${build_type} -DWASM=1 ..
 emmake make
-em++ ${wasm_optimization_level} libstb-image.a -o ${app_name}.html --bind -lidbfs.js -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=4GB -s FORCE_FILESYSTEM=1 
+em++ ${wasm_optimization_level} libstb-image.a -o ${app_name}.js --bind -lnodefs.js -s ALLOW_MEMORY_GROWTH=1 -s MAXIMUM_MEMORY=4GB -s FORCE_FILESYSTEM=1 -s EXPORTED_RUNTIME_METHODS=["UTF8ToString"]
 cp ${app_name}.* ../docs
 popd 

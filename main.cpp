@@ -21,11 +21,12 @@ int EMSCRIPTEN_KEEPALIVE generate_rendition_using_idb(std::string input_image_pa
 {
     // load image
     int width, height, channels;
+    std::cout << "stbi_load: " << input_image_path << std::endl;
     unsigned char *img = stbi_load(input_image_path.c_str(), &width, &height, &channels, 0);
 
     if (img == NULL)
     {
-        std::cout << "STB error loading: " << output_image_path << std::endl;
+        std::cout << "STB error loading: " << input_image_path << std::endl;
         return 2;
     }
     std::cout << "STB image loaded" << std::endl;
@@ -49,9 +50,23 @@ int EMSCRIPTEN_KEEPALIVE get_height()
 }
 
 #if __EMSCRIPTEN__
+
+EM_JS(void, MountWebFilesystem, (const char* repo_root_path), {
+ //inside of emscripten
+   FS.mkdir('/working');
+   FS.mount(NODEFS, {root : Module.UTF8ToString(repo_root_path)}, '/working');
+});
+
 int EMSCRIPTEN_KEEPALIVE main(int argc, char *argv[])
 {
     std::cout << "STB c++ has loaded" << std::endl;
+    MountWebFilesystem(".");
+
+    std::string input_image_path = "/working/input.psd";
+    std::string output_image_path = "/working/output.png";
+
+    generate_rendition_using_idb(input_image_path, output_image_path);
+
 }
 EMSCRIPTEN_BINDINGS(generate_rendition_using_idb)
 {

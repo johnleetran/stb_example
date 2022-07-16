@@ -19,7 +19,7 @@ var ENVIRONMENT_IS_NODE = typeof process == "object" && typeof process.versions 
 var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIRONMENT_IS_WORKER;
 
 if (Module["ENVIRONMENT"]) {
- throw new Error("Module.ENVIRONMENT has been deprecated. To force the environment, use the ENVIRONMENT compile-time option (for example, -s ENVIRONMENT=web or -s ENVIRONMENT=node)");
+ throw new Error("Module.ENVIRONMENT has been deprecated. To force the environment, use the ENVIRONMENT compile-time option (for example, -sENVIRONMENT=web or -sENVIRONMENT=node)");
 }
 
 var scriptDirectory = "";
@@ -55,32 +55,32 @@ if (ENVIRONMENT_IS_NODE) {
  } else {
   scriptDirectory = __dirname + "/";
  }
- requireNodeFS = (() => {
+ requireNodeFS = () => {
   if (!nodePath) {
    fs = require("fs");
    nodePath = require("path");
   }
- });
+ };
  read_ = function shell_read(filename, binary) {
   requireNodeFS();
   filename = nodePath["normalize"](filename);
   return fs.readFileSync(filename, binary ? undefined : "utf8");
  };
- readBinary = (filename => {
+ readBinary = filename => {
   var ret = read_(filename, true);
   if (!ret.buffer) {
    ret = new Uint8Array(ret);
   }
   assert(ret.buffer);
   return ret;
- });
- readAsync = ((filename, onload, onerror) => {
+ };
+ readAsync = (filename, onload, onerror) => {
   requireNodeFS();
   filename = nodePath["normalize"](filename);
   fs.readFile(filename, function(err, data) {
    if (err) onerror(err); else onload(data.buffer);
   });
- });
+ };
  if (process["argv"].length > 1) {
   thisProgram = process["argv"][1].replace(/\\/g, "/");
  }
@@ -96,14 +96,14 @@ if (ENVIRONMENT_IS_NODE) {
  process["on"]("unhandledRejection", function(reason) {
   throw reason;
  });
- quit_ = ((status, toThrow) => {
+ quit_ = (status, toThrow) => {
   if (keepRuntimeAlive()) {
    process["exitCode"] = status;
    throw toThrow;
   }
   logExceptionOnExit(toThrow);
   process["exit"](status);
- });
+ };
  Module["inspect"] = function() {
   return "[Emscripten Module object]";
  };
@@ -132,10 +132,10 @@ if (ENVIRONMENT_IS_NODE) {
   arguments_ = arguments;
  }
  if (typeof quit == "function") {
-  quit_ = ((status, toThrow) => {
+  quit_ = (status, toThrow) => {
    logExceptionOnExit(toThrow);
    quit(status);
-  });
+  };
  }
  if (typeof print != "undefined") {
   if (typeof console == "undefined") console = {};
@@ -155,37 +155,37 @@ if (ENVIRONMENT_IS_NODE) {
  }
  if (!(typeof window == "object" || typeof importScripts == "function")) throw new Error("not compiled for this environment (did you build to HTML and try to run it not on the web, or set ENVIRONMENT to something - like node - and run it someplace else - like on the web?)");
  {
-  read_ = (url => {
+  read_ = url => {
    var xhr = new XMLHttpRequest();
    xhr.open("GET", url, false);
    xhr.send(null);
    return xhr.responseText;
-  });
+  };
   if (ENVIRONMENT_IS_WORKER) {
-   readBinary = (url => {
+   readBinary = url => {
     var xhr = new XMLHttpRequest();
     xhr.open("GET", url, false);
     xhr.responseType = "arraybuffer";
     xhr.send(null);
     return new Uint8Array(xhr.response);
-   });
+   };
   }
-  readAsync = ((url, onload, onerror) => {
+  readAsync = (url, onload, onerror) => {
    var xhr = new XMLHttpRequest();
    xhr.open("GET", url, true);
    xhr.responseType = "arraybuffer";
-   xhr.onload = (() => {
+   xhr.onload = () => {
     if (xhr.status == 200 || xhr.status == 0 && xhr.response) {
      onload(xhr.response);
      return;
     }
     onerror();
-   });
+   };
    xhr.onerror = onerror;
    xhr.send(null);
-  });
+  };
  }
- setWindowTitle = (title => document.title = title);
+ setWindowTitle = title => document.title = title;
 } else {
  throw new Error("environment detection error");
 }
@@ -238,13 +238,13 @@ legacyModuleProp("readBinary", "readBinary");
 
 legacyModuleProp("setWindowTitle", "setWindowTitle");
 
+var IDBFS = "IDBFS is no longer included by default; build with -lidbfs.js";
+
 var PROXYFS = "PROXYFS is no longer included by default; build with -lproxyfs.js";
 
 var WORKERFS = "WORKERFS is no longer included by default; build with -lworkerfs.js";
 
-var NODEFS = "NODEFS is no longer included by default; build with -lnodefs.js";
-
-assert(!ENVIRONMENT_IS_SHELL, "shell environment detected but not enabled at build time.  Add 'shell' to `-s ENVIRONMENT` to enable.");
+assert(!ENVIRONMENT_IS_SHELL, "shell environment detected but not enabled at build time.  Add 'shell' to `-sENVIRONMENT` to enable.");
 
 var STACK_ALIGN = 16;
 
@@ -254,15 +254,19 @@ function getNativeTypeSize(type) {
  switch (type) {
  case "i1":
  case "i8":
+ case "u8":
   return 1;
 
  case "i16":
+ case "u16":
   return 2;
 
  case "i32":
+ case "u32":
   return 4;
 
  case "i64":
+ case "u64":
   return 8;
 
  case "float":
@@ -294,110 +298,6 @@ function warnOnce(text) {
  }
 }
 
-function convertJsFunctionToWasm(func, sig) {
- if (typeof WebAssembly.Function == "function") {
-  var typeNames = {
-   "i": "i32",
-   "j": "i64",
-   "f": "f32",
-   "d": "f64"
-  };
-  var type = {
-   parameters: [],
-   results: sig[0] == "v" ? [] : [ typeNames[sig[0]] ]
-  };
-  for (var i = 1; i < sig.length; ++i) {
-   type.parameters.push(typeNames[sig[i]]);
-  }
-  return new WebAssembly.Function(type, func);
- }
- var typeSection = [ 1, 0, 1, 96 ];
- var sigRet = sig.slice(0, 1);
- var sigParam = sig.slice(1);
- var typeCodes = {
-  "i": 127,
-  "j": 126,
-  "f": 125,
-  "d": 124
- };
- typeSection.push(sigParam.length);
- for (var i = 0; i < sigParam.length; ++i) {
-  typeSection.push(typeCodes[sigParam[i]]);
- }
- if (sigRet == "v") {
-  typeSection.push(0);
- } else {
-  typeSection = typeSection.concat([ 1, typeCodes[sigRet] ]);
- }
- typeSection[1] = typeSection.length - 2;
- var bytes = new Uint8Array([ 0, 97, 115, 109, 1, 0, 0, 0 ].concat(typeSection, [ 2, 7, 1, 1, 101, 1, 102, 0, 0, 7, 5, 1, 1, 102, 0, 0 ]));
- var module = new WebAssembly.Module(bytes);
- var instance = new WebAssembly.Instance(module, {
-  "e": {
-   "f": func
-  }
- });
- var wrappedFunc = instance.exports["f"];
- return wrappedFunc;
-}
-
-var freeTableIndexes = [];
-
-var functionsInTableMap;
-
-function getEmptyTableSlot() {
- if (freeTableIndexes.length) {
-  return freeTableIndexes.pop();
- }
- try {
-  wasmTable.grow(1);
- } catch (err) {
-  if (!(err instanceof RangeError)) {
-   throw err;
-  }
-  throw "Unable to grow wasm table. Set ALLOW_TABLE_GROWTH.";
- }
- return wasmTable.length - 1;
-}
-
-function updateTableMap(offset, count) {
- for (var i = offset; i < offset + count; i++) {
-  var item = getWasmTableEntry(i);
-  if (item) {
-   functionsInTableMap.set(item, i);
-  }
- }
-}
-
-function addFunction(func, sig) {
- assert(typeof func != "undefined");
- if (!functionsInTableMap) {
-  functionsInTableMap = new WeakMap();
-  updateTableMap(0, wasmTable.length);
- }
- if (functionsInTableMap.has(func)) {
-  return functionsInTableMap.get(func);
- }
- var ret = getEmptyTableSlot();
- try {
-  setWasmTableEntry(ret, func);
- } catch (err) {
-  if (!(err instanceof TypeError)) {
-   throw err;
-  }
-  assert(typeof sig != "undefined", "Missing signature argument to addFunction: " + func);
-  var wrapped = convertJsFunctionToWasm(func, sig);
-  setWasmTableEntry(ret, wrapped);
- }
- functionsInTableMap.set(func, ret);
- return ret;
-}
-
-function removeFunction(index) {
- functionsInTableMap.delete(getWasmTableEntry(index));
- freeTableIndexes.push(index);
-}
-
 function legacyModuleProp(prop, newName) {
  if (!Object.getOwnPropertyDescriptor(Module, prop)) {
   Object.defineProperty(Module, prop, {
@@ -418,9 +318,13 @@ function ignoredModuleProp(prop) {
 function unexportedMessage(sym, isFSSybol) {
  var msg = "'" + sym + "' was not exported. add it to EXPORTED_RUNTIME_METHODS (see the FAQ)";
  if (isFSSybol) {
-  msg += ". Alternatively, forcing filesystem support (-s FORCE_FILESYSTEM=1) can export this for you";
+  msg += ". Alternatively, forcing filesystem support (-sFORCE_FILESYSTEM) can export this for you";
  }
  return msg;
+}
+
+function missingLibraryFunc(sym) {
+ return () => abort("Call to `" + sym + "` which is a library function and not included by default; add it to your library.js __deps or to DEFAULT_LIBRARY_FUNCS_TO_INCLUDE on the command line");
 }
 
 function unexportedRuntimeSymbol(sym, isFSSybol) {
@@ -431,12 +335,6 @@ function unexportedRuntimeSymbol(sym, isFSSybol) {
     abort(unexportedMessage(sym, isFSSybol));
    }
   });
- }
-}
-
-function unexportedRuntimeFunction(sym, isFSSybol) {
- if (!Object.getOwnPropertyDescriptor(Module, sym)) {
-  Module[sym] = (() => abort(unexportedMessage(sym, isFSSybol)));
  }
 }
 
@@ -460,73 +358,6 @@ legacyModuleProp("noExitRuntime", "noExitRuntime");
 
 if (typeof WebAssembly != "object") {
  abort("no native wasm support detected");
-}
-
-function setValue(ptr, value, type = "i8", noSafe) {
- if (type.charAt(type.length - 1) === "*") type = "i32";
- switch (type) {
- case "i1":
-  HEAP8[ptr >>> 0] = value;
-  break;
-
- case "i8":
-  HEAP8[ptr >>> 0] = value;
-  break;
-
- case "i16":
-  HEAP16[ptr >>> 1] = value;
-  break;
-
- case "i32":
-  HEAP32[ptr >>> 2] = value;
-  break;
-
- case "i64":
-  tempI64 = [ value >>> 0, (tempDouble = value, +Math.abs(tempDouble) >= 1 ? tempDouble > 0 ? (Math.min(+Math.floor(tempDouble / 4294967296), 4294967295) | 0) >>> 0 : ~~+Math.ceil((tempDouble - +(~~tempDouble >>> 0)) / 4294967296) >>> 0 : 0) ], 
-  HEAP32[ptr >>> 2] = tempI64[0], HEAP32[ptr + 4 >>> 2] = tempI64[1];
-  break;
-
- case "float":
-  HEAPF32[ptr >>> 2] = value;
-  break;
-
- case "double":
-  HEAPF64[ptr >>> 3] = value;
-  break;
-
- default:
-  abort("invalid type for setValue: " + type);
- }
-}
-
-function getValue(ptr, type = "i8", noSafe) {
- if (type.charAt(type.length - 1) === "*") type = "i32";
- switch (type) {
- case "i1":
-  return HEAP8[ptr >>> 0];
-
- case "i8":
-  return HEAP8[ptr >>> 0];
-
- case "i16":
-  return HEAP16[ptr >>> 1];
-
- case "i32":
-  return HEAP32[ptr >>> 2];
-
- case "i64":
-  return HEAP32[ptr >>> 2];
-
- case "float":
-  return HEAPF32[ptr >>> 2];
-
- case "double":
-  return Number(HEAPF64[ptr >>> 3]);
-
- default:
-  abort("invalid type for getValue: " + type);
- }
- return null;
 }
 
 var wasmMemory;
@@ -565,7 +396,9 @@ function ccall(ident, returnType, argTypes, args, opts) {
   }
  };
  function convertReturnValue(ret) {
-  if (returnType === "string") return UTF8ToString(ret);
+  if (returnType === "string") {
+   return UTF8ToString(ret);
+  }
   if (returnType === "boolean") return Boolean(ret);
   return ret;
  }
@@ -890,9 +723,9 @@ assert(INITIAL_MEMORY >= TOTAL_STACK, "INITIAL_MEMORY should be larger than TOTA
 
 assert(typeof Int32Array != "undefined" && typeof Float64Array !== "undefined" && Int32Array.prototype.subarray != undefined && Int32Array.prototype.set != undefined, "JS engine does not provide full typed array support");
 
-assert(!Module["wasmMemory"], "Use of `wasmMemory` detected.  Use -s IMPORTED_MEMORY to define wasmMemory externally");
+assert(!Module["wasmMemory"], "Use of `wasmMemory` detected.  Use -sIMPORTED_MEMORY to define wasmMemory externally");
 
-assert(INITIAL_MEMORY == 16777216, "Detected runtime INITIAL_MEMORY setting.  Use -s IMPORTED_MEMORY to define wasmMemory dynamically");
+assert(INITIAL_MEMORY == 16777216, "Detected runtime INITIAL_MEMORY setting.  Use -sIMPORTED_MEMORY to define wasmMemory dynamically");
 
 var wasmTable;
 
@@ -901,7 +734,7 @@ function writeStackCookie() {
  assert((max & 3) == 0);
  HEAP32[max >>> 2] = 34821223;
  HEAP32[max + 4 >>> 2] = 2310721022;
- HEAP32[0 >>> 0] = 1668509029;
+ HEAPU32[0 >>> 0] = 1668509029;
 }
 
 function checkStackCookie() {
@@ -910,16 +743,16 @@ function checkStackCookie() {
  var cookie1 = HEAPU32[max >>> 2];
  var cookie2 = HEAPU32[max + 4 >>> 2];
  if (cookie1 != 34821223 || cookie2 != 2310721022) {
-  abort("Stack overflow! Stack cookie has been overwritten, expected hex dwords 0x89BACDFE and 0x2135467, but received 0x" + cookie2.toString(16) + " 0x" + cookie1.toString(16));
+  abort("Stack overflow! Stack cookie has been overwritten at 0x" + max.toString(16) + ", expected hex dwords 0x89BACDFE and 0x2135467, but received 0x" + cookie2.toString(16) + " 0x" + cookie1.toString(16));
  }
- if (HEAP32[0 >>> 0] !== 1668509029) abort("Runtime error: The application has corrupted its heap memory area (address zero)!");
+ if (HEAPU32[0 >>> 0] !== 1668509029) abort("Runtime error: The application has corrupted its heap memory area (address zero)!");
 }
 
 (function() {
  var h16 = new Int16Array(1);
  var h8 = new Int8Array(h16.buffer);
  h16[0] = 25459;
- if (h8[0] !== 115 || h8[1] !== 99) throw "Runtime error: expected the system to be little-endian! (Run with -s SUPPORT_BIG_ENDIAN=1 to bypass)";
+ if (h8[0] !== 115 || h8[1] !== 99) throw "Runtime error: expected the system to be little-endian! (Run with -sSUPPORT_BIG_ENDIAN to bypass)";
 })();
 
 var __ATPRERUN__ = [];
@@ -949,9 +782,9 @@ function preRun() {
 }
 
 function initRuntime() {
- checkStackCookie();
  assert(!runtimeInitialized);
  runtimeInitialized = true;
+ checkStackCookie();
  if (!Module["noFSInit"] && !FS.init.initialized) FS.init();
  FS.ignorePermissions = false;
  TTY.init();
@@ -1072,10 +905,6 @@ function removeRunDependency(id) {
   }
  }
 }
-
-Module["preloadedImages"] = {};
-
-Module["preloadedAudios"] = {};
 
 function abort(what) {
  {
@@ -1204,7 +1033,7 @@ function createWasm() {
   });
  }
  function instantiateAsync() {
-  if (!wasmBinary && typeof WebAssembly.instantiateStreaming == "function" && !isDataURI(wasmBinaryFile) && !isFileURI(wasmBinaryFile) && typeof fetch == "function") {
+  if (!wasmBinary && typeof WebAssembly.instantiateStreaming == "function" && !isDataURI(wasmBinaryFile) && !isFileURI(wasmBinaryFile) && !ENVIRONMENT_IS_NODE && typeof fetch == "function") {
    return fetch(wasmBinaryFile, {
     credentials: "same-origin"
    }).then(function(response) {
@@ -1238,23 +1067,16 @@ var tempI64;
 
 var ASM_CONSTS = {};
 
+function MountWebFilesystem(repo_root_path) {
+ FS.mkdir("/working");
+ FS.mount(NODEFS, {
+  root: Module.UTF8ToString(repo_root_path)
+ }, "/working");
+}
+
 function callRuntimeCallbacks(callbacks) {
  while (callbacks.length > 0) {
-  var callback = callbacks.shift();
-  if (typeof callback == "function") {
-   callback(Module);
-   continue;
-  }
-  var func = callback.func;
-  if (typeof func == "number") {
-   if (callback.arg === undefined) {
-    getWasmTableEntry(func)();
-   } else {
-    getWasmTableEntry(func)(callback.arg);
-   }
-  } else {
-   func(callback.arg === undefined ? null : callback.arg);
-  }
+  callbacks.shift()(Module);
  }
 }
 
@@ -1266,7 +1088,7 @@ function withStackSave(f) {
 }
 
 function demangle(func) {
- warnOnce("warning: build with  -s DEMANGLE_SUPPORT=1  to link in libcxxabi demangling");
+ warnOnce("warning: build with -sDEMANGLE_SUPPORT to link in libcxxabi demangling");
  return func;
 }
 
@@ -1278,16 +1100,37 @@ function demangleAll(text) {
  });
 }
 
-var wasmTableMirror = [];
+function getValue(ptr, type = "i8") {
+ if (type.endsWith("*")) type = "*";
+ switch (type) {
+ case "i1":
+  return HEAP8[ptr >>> 0];
 
-function getWasmTableEntry(funcPtr) {
- var func = wasmTableMirror[funcPtr];
- if (!func) {
-  if (funcPtr >= wasmTableMirror.length) wasmTableMirror.length = funcPtr + 1;
-  wasmTableMirror[funcPtr] = func = wasmTable.get(funcPtr);
+ case "i8":
+  return HEAP8[ptr >>> 0];
+
+ case "i16":
+  return HEAP16[ptr >>> 1];
+
+ case "i32":
+  return HEAP32[ptr >>> 2];
+
+ case "i64":
+  return HEAP32[ptr >>> 2];
+
+ case "float":
+  return HEAPF32[ptr >>> 2];
+
+ case "double":
+  return HEAPF64[ptr >>> 3];
+
+ case "*":
+  return HEAPU32[ptr >>> 2];
+
+ default:
+  abort("invalid type for getValue: " + type);
  }
- assert(wasmTable.get(funcPtr) == func, "JavaScript-side Wasm function table mirror is out of date!");
- return func;
+ return null;
 }
 
 function handleException(e) {
@@ -1312,9 +1155,45 @@ function jsStackTrace() {
  return error.stack.toString();
 }
 
-function setWasmTableEntry(idx, func) {
- wasmTable.set(idx, func);
- wasmTableMirror[idx] = func;
+function setValue(ptr, value, type = "i8") {
+ if (type.endsWith("*")) type = "*";
+ switch (type) {
+ case "i1":
+  HEAP8[ptr >>> 0] = value;
+  break;
+
+ case "i8":
+  HEAP8[ptr >>> 0] = value;
+  break;
+
+ case "i16":
+  HEAP16[ptr >>> 1] = value;
+  break;
+
+ case "i32":
+  HEAP32[ptr >>> 2] = value;
+  break;
+
+ case "i64":
+  tempI64 = [ value >>> 0, (tempDouble = value, +Math.abs(tempDouble) >= 1 ? tempDouble > 0 ? (Math.min(+Math.floor(tempDouble / 4294967296), 4294967295) | 0) >>> 0 : ~~+Math.ceil((tempDouble - +(~~tempDouble >>> 0)) / 4294967296) >>> 0 : 0) ], 
+  HEAP32[ptr >>> 2] = tempI64[0], HEAP32[ptr + 4 >>> 2] = tempI64[1];
+  break;
+
+ case "float":
+  HEAPF32[ptr >>> 2] = value;
+  break;
+
+ case "double":
+  HEAPF64[ptr >>> 3] = value;
+  break;
+
+ case "*":
+  HEAPU32[ptr >>> 2] = value;
+  break;
+
+ default:
+  abort("invalid type for setValue: " + type);
+ }
 }
 
 function stackTrace() {
@@ -1327,17 +1206,101 @@ function ___assert_fail(condition, filename, line, func) {
  abort("Assertion failed: " + UTF8ToString(condition) + ", at: " + [ filename ? UTF8ToString(filename) : "unknown filename", line, func ? UTF8ToString(func) : "unknown function" ]);
 }
 
+function ___cxa_allocate_exception(size) {
+ return _malloc(size + 24) + 24;
+}
+
+function ExceptionInfo(excPtr) {
+ this.excPtr = excPtr;
+ this.ptr = excPtr - 24;
+ this.set_type = function(type) {
+  HEAPU32[this.ptr + 4 >>> 2] = type;
+ };
+ this.get_type = function() {
+  return HEAPU32[this.ptr + 4 >>> 2];
+ };
+ this.set_destructor = function(destructor) {
+  HEAPU32[this.ptr + 8 >>> 2] = destructor;
+ };
+ this.get_destructor = function() {
+  return HEAPU32[this.ptr + 8 >>> 2];
+ };
+ this.set_refcount = function(refcount) {
+  HEAP32[this.ptr >>> 2] = refcount;
+ };
+ this.set_caught = function(caught) {
+  caught = caught ? 1 : 0;
+  HEAP8[this.ptr + 12 >>> 0] = caught;
+ };
+ this.get_caught = function() {
+  return HEAP8[this.ptr + 12 >>> 0] != 0;
+ };
+ this.set_rethrown = function(rethrown) {
+  rethrown = rethrown ? 1 : 0;
+  HEAP8[this.ptr + 13 >>> 0] = rethrown;
+ };
+ this.get_rethrown = function() {
+  return HEAP8[this.ptr + 13 >>> 0] != 0;
+ };
+ this.init = function(type, destructor) {
+  this.set_adjusted_ptr(0);
+  this.set_type(type);
+  this.set_destructor(destructor);
+  this.set_refcount(0);
+  this.set_caught(false);
+  this.set_rethrown(false);
+ };
+ this.add_ref = function() {
+  var value = HEAP32[this.ptr >>> 2];
+  HEAP32[this.ptr >>> 2] = value + 1;
+ };
+ this.release_ref = function() {
+  var prev = HEAP32[this.ptr >>> 2];
+  HEAP32[this.ptr >>> 2] = prev - 1;
+  assert(prev > 0);
+  return prev === 1;
+ };
+ this.set_adjusted_ptr = function(adjustedPtr) {
+  HEAPU32[this.ptr + 16 >>> 2] = adjustedPtr;
+ };
+ this.get_adjusted_ptr = function() {
+  return HEAPU32[this.ptr + 16 >>> 2];
+ };
+ this.get_exception_ptr = function() {
+  var isPointer = ___cxa_is_pointer_type(this.get_type());
+  if (isPointer) {
+   return HEAPU32[this.excPtr >>> 2];
+  }
+  var adjusted = this.get_adjusted_ptr();
+  if (adjusted !== 0) return adjusted;
+  return this.excPtr;
+ };
+}
+
+var exceptionLast = 0;
+
+var uncaughtExceptionCount = 0;
+
+function ___cxa_throw(ptr, type, destructor) {
+ var info = new ExceptionInfo(ptr);
+ info.init(type, destructor);
+ exceptionLast = ptr;
+ uncaughtExceptionCount++;
+ throw ptr + " - Exception catching is disabled, this exception cannot be caught. Compile with -sNO_DISABLE_EXCEPTION_CATCHING or -sEXCEPTION_CATCHING_ALLOWED=[..] to catch.";
+}
+
 function setErrNo(value) {
  HEAP32[___errno_location() >>> 2] = value;
  return value;
 }
 
 var PATH = {
- splitPath: function(filename) {
+ isAbs: path => path.charAt(0) === "/",
+ splitPath: filename => {
   var splitPathRe = /^(\/?|)([\s\S]*?)((?:\.{1,2}|[^\/]+?|)(\.[^.\/]*|))(?:[\/]*)$/;
   return splitPathRe.exec(filename).slice(1);
  },
- normalizeArray: function(parts, allowAboveRoot) {
+ normalizeArray: (parts, allowAboveRoot) => {
   var up = 0;
   for (var i = parts.length - 1; i >= 0; i--) {
    var last = parts[i];
@@ -1358,11 +1321,9 @@ var PATH = {
   }
   return parts;
  },
- normalize: function(path) {
-  var isAbsolute = path.charAt(0) === "/", trailingSlash = path.substr(-1) === "/";
-  path = PATH.normalizeArray(path.split("/").filter(function(p) {
-   return !!p;
-  }), !isAbsolute).join("/");
+ normalize: path => {
+  var isAbsolute = PATH.isAbs(path), trailingSlash = path.substr(-1) === "/";
+  path = PATH.normalizeArray(path.split("/").filter(p => !!p), !isAbsolute).join("/");
   if (!path && !isAbsolute) {
    path = ".";
   }
@@ -1371,7 +1332,7 @@ var PATH = {
   }
   return (isAbsolute ? "/" : "") + path;
  },
- dirname: function(path) {
+ dirname: path => {
   var result = PATH.splitPath(path), root = result[0], dir = result[1];
   if (!root && !dir) {
    return ".";
@@ -1381,7 +1342,7 @@ var PATH = {
   }
   return root + dir;
  },
- basename: function(path) {
+ basename: path => {
   if (path === "/") return "/";
   path = PATH.normalize(path);
   path = path.replace(/\/$/, "");
@@ -1389,14 +1350,11 @@ var PATH = {
   if (lastSlash === -1) return path;
   return path.substr(lastSlash + 1);
  },
- extname: function(path) {
-  return PATH.splitPath(path)[3];
- },
  join: function() {
   var paths = Array.prototype.slice.call(arguments, 0);
   return PATH.normalize(paths.join("/"));
  },
- join2: function(l, r) {
+ join2: (l, r) => {
   return PATH.normalize(l + "/" + r);
  }
 };
@@ -1432,14 +1390,12 @@ var PATH_FS = {
     return "";
    }
    resolvedPath = path + "/" + resolvedPath;
-   resolvedAbsolute = path.charAt(0) === "/";
+   resolvedAbsolute = PATH.isAbs(path);
   }
-  resolvedPath = PATH.normalizeArray(resolvedPath.split("/").filter(function(p) {
-   return !!p;
-  }), !resolvedAbsolute).join("/");
+  resolvedPath = PATH.normalizeArray(resolvedPath.split("/").filter(p => !!p), !resolvedAbsolute).join("/");
   return (resolvedAbsolute ? "/" : "") + resolvedPath || ".";
  },
- relative: function(from, to) {
+ relative: (from, to) => {
   from = PATH_FS.resolve(from).substr(1);
   to = PATH_FS.resolve(to).substr(1);
   function trim(arr) {
@@ -1897,10 +1853,7 @@ var MEMFS = {
    MEMFS.expandFileStorage(stream.node, offset + length);
    stream.node.usedBytes = Math.max(stream.node.usedBytes, offset + length);
   },
-  mmap: function(stream, address, length, position, prot, flags) {
-   if (address !== 0) {
-    throw new FS.ErrnoError(28);
-   }
+  mmap: function(stream, length, position, prot, flags) {
    if (!FS.isFile(stream.node.mode)) {
     throw new FS.ErrnoError(43);
    }
@@ -1960,284 +1913,300 @@ function asyncLoad(url, onload, onerror, noRunDep) {
  if (dep) addRunDependency(dep);
 }
 
-var IDBFS = {
- dbs: {},
- indexedDB: () => {
-  if (typeof indexedDB != "undefined") return indexedDB;
-  var ret = null;
-  if (typeof window == "object") ret = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB || window.msIndexedDB;
-  assert(ret, "IDBFS used, but indexedDB not supported");
-  return ret;
- },
- DB_VERSION: 21,
- DB_STORE_NAME: "FILE_DATA",
- mount: function(mount) {
-  return MEMFS.mount.apply(null, arguments);
- },
- syncfs: (mount, populate, callback) => {
-  IDBFS.getLocalSet(mount, (err, local) => {
-   if (err) return callback(err);
-   IDBFS.getRemoteSet(mount, (err, remote) => {
-    if (err) return callback(err);
-    var src = populate ? remote : local;
-    var dst = populate ? local : remote;
-    IDBFS.reconcile(src, dst, callback);
-   });
-  });
- },
- getDB: (name, callback) => {
-  var db = IDBFS.dbs[name];
-  if (db) {
-   return callback(null, db);
+var ERRNO_CODES = {};
+
+var NODEFS = {
+ isWindows: false,
+ staticInit: () => {
+  NODEFS.isWindows = !!process.platform.match(/^win/);
+  var flags = process["binding"]("constants");
+  if (flags["fs"]) {
+   flags = flags["fs"];
   }
-  var req;
+  NODEFS.flagsForNodeMap = {
+   1024: flags["O_APPEND"],
+   64: flags["O_CREAT"],
+   128: flags["O_EXCL"],
+   256: flags["O_NOCTTY"],
+   0: flags["O_RDONLY"],
+   2: flags["O_RDWR"],
+   4096: flags["O_SYNC"],
+   512: flags["O_TRUNC"],
+   1: flags["O_WRONLY"],
+   131072: flags["O_NOFOLLOW"]
+  };
+  assert(NODEFS.flagsForNodeMap["0"] === 0);
+ },
+ convertNodeCode: e => {
+  var code = e.code;
+  assert(code in ERRNO_CODES, "unexpected node error code: " + code + " (" + e + ")");
+  return ERRNO_CODES[code];
+ },
+ mount: mount => {
+  assert(ENVIRONMENT_IS_NODE);
+  return NODEFS.createNode(null, "/", NODEFS.getMode(mount.opts.root), 0);
+ },
+ createNode: (parent, name, mode, dev) => {
+  if (!FS.isDir(mode) && !FS.isFile(mode) && !FS.isLink(mode)) {
+   throw new FS.ErrnoError(28);
+  }
+  var node = FS.createNode(parent, name, mode);
+  node.node_ops = NODEFS.node_ops;
+  node.stream_ops = NODEFS.stream_ops;
+  return node;
+ },
+ getMode: path => {
+  var stat;
   try {
-   req = IDBFS.indexedDB().open(name, IDBFS.DB_VERSION);
+   stat = fs.lstatSync(path);
+   if (NODEFS.isWindows) {
+    stat.mode = stat.mode | (stat.mode & 292) >> 2;
+   }
   } catch (e) {
-   return callback(e);
+   if (!e.code) throw e;
+   throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
   }
-  if (!req) {
-   return callback("Unable to connect to IndexedDB");
-  }
-  req.onupgradeneeded = (e => {
-   var db = e.target.result;
-   var transaction = e.target.transaction;
-   var fileStore;
-   if (db.objectStoreNames.contains(IDBFS.DB_STORE_NAME)) {
-    fileStore = transaction.objectStore(IDBFS.DB_STORE_NAME);
-   } else {
-    fileStore = db.createObjectStore(IDBFS.DB_STORE_NAME);
-   }
-   if (!fileStore.indexNames.contains("timestamp")) {
-    fileStore.createIndex("timestamp", "timestamp", {
-     unique: false
-    });
-   }
-  });
-  req.onsuccess = (() => {
-   db = req.result;
-   IDBFS.dbs[name] = db;
-   callback(null, db);
-  });
-  req.onerror = (e => {
-   callback(this.error);
-   e.preventDefault();
-  });
+  return stat.mode;
  },
- getLocalSet: (mount, callback) => {
-  var entries = {};
-  function isRealDir(p) {
-   return p !== "." && p !== "..";
+ realPath: node => {
+  var parts = [];
+  while (node.parent !== node) {
+   parts.push(node.name);
+   node = node.parent;
   }
-  function toAbsolute(root) {
-   return p => {
-    return PATH.join2(root, p);
-   };
+  parts.push(node.mount.opts.root);
+  parts.reverse();
+  return PATH.join.apply(null, parts);
+ },
+ flagsForNode: flags => {
+  flags &= ~2097152;
+  flags &= ~2048;
+  flags &= ~32768;
+  flags &= ~524288;
+  flags &= ~65536;
+  var newFlags = 0;
+  for (var k in NODEFS.flagsForNodeMap) {
+   if (flags & k) {
+    newFlags |= NODEFS.flagsForNodeMap[k];
+    flags ^= k;
+   }
   }
-  var check = FS.readdir(mount.mountpoint).filter(isRealDir).map(toAbsolute(mount.mountpoint));
-  while (check.length) {
-   var path = check.pop();
+  if (!flags) {
+   return newFlags;
+  } else {
+   throw new FS.ErrnoError(28);
+  }
+ },
+ node_ops: {
+  getattr: node => {
+   var path = NODEFS.realPath(node);
    var stat;
    try {
-    stat = FS.stat(path);
+    stat = fs.lstatSync(path);
    } catch (e) {
-    return callback(e);
+    if (!e.code) throw e;
+    throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
    }
-   if (FS.isDir(stat.mode)) {
-    check.push.apply(check, FS.readdir(path).filter(isRealDir).map(toAbsolute(path)));
+   if (NODEFS.isWindows && !stat.blksize) {
+    stat.blksize = 4096;
    }
-   entries[path] = {
-    "timestamp": stat.mtime
+   if (NODEFS.isWindows && !stat.blocks) {
+    stat.blocks = (stat.size + stat.blksize - 1) / stat.blksize | 0;
+   }
+   return {
+    dev: stat.dev,
+    ino: stat.ino,
+    mode: stat.mode,
+    nlink: stat.nlink,
+    uid: stat.uid,
+    gid: stat.gid,
+    rdev: stat.rdev,
+    size: stat.size,
+    atime: stat.atime,
+    mtime: stat.mtime,
+    ctime: stat.ctime,
+    blksize: stat.blksize,
+    blocks: stat.blocks
    };
-  }
-  return callback(null, {
-   type: "local",
-   entries: entries
-  });
- },
- getRemoteSet: (mount, callback) => {
-  var entries = {};
-  IDBFS.getDB(mount.mountpoint, (err, db) => {
-   if (err) return callback(err);
+  },
+  setattr: (node, attr) => {
+   var path = NODEFS.realPath(node);
    try {
-    var transaction = db.transaction([ IDBFS.DB_STORE_NAME ], "readonly");
-    transaction.onerror = (e => {
-     callback(this.error);
-     e.preventDefault();
-    });
-    var store = transaction.objectStore(IDBFS.DB_STORE_NAME);
-    var index = store.index("timestamp");
-    index.openKeyCursor().onsuccess = (event => {
-     var cursor = event.target.result;
-     if (!cursor) {
-      return callback(null, {
-       type: "remote",
-       db: db,
-       entries: entries
-      });
-     }
-     entries[cursor.primaryKey] = {
-      "timestamp": cursor.key
-     };
-     cursor.continue();
-    });
+    if (attr.mode !== undefined) {
+     fs.chmodSync(path, attr.mode);
+     node.mode = attr.mode;
+    }
+    if (attr.timestamp !== undefined) {
+     var date = new Date(attr.timestamp);
+     fs.utimesSync(path, date, date);
+    }
+    if (attr.size !== undefined) {
+     fs.truncateSync(path, attr.size);
+    }
    } catch (e) {
-    return callback(e);
+    if (!e.code) throw e;
+    throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
    }
-  });
- },
- loadLocalEntry: (path, callback) => {
-  var stat, node;
-  try {
-   var lookup = FS.lookupPath(path);
-   node = lookup.node;
-   stat = FS.stat(path);
-  } catch (e) {
-   return callback(e);
-  }
-  if (FS.isDir(stat.mode)) {
-   return callback(null, {
-    "timestamp": stat.mtime,
-    "mode": stat.mode
-   });
-  } else if (FS.isFile(stat.mode)) {
-   node.contents = MEMFS.getFileDataAsTypedArray(node);
-   return callback(null, {
-    "timestamp": stat.mtime,
-    "mode": stat.mode,
-    "contents": node.contents
-   });
-  } else {
-   return callback(new Error("node type not supported"));
-  }
- },
- storeLocalEntry: (path, entry, callback) => {
-  try {
-   if (FS.isDir(entry["mode"])) {
-    FS.mkdirTree(path, entry["mode"]);
-   } else if (FS.isFile(entry["mode"])) {
-    FS.writeFile(path, entry["contents"], {
-     canOwn: true
-    });
-   } else {
-    return callback(new Error("node type not supported"));
+  },
+  lookup: (parent, name) => {
+   var path = PATH.join2(NODEFS.realPath(parent), name);
+   var mode = NODEFS.getMode(path);
+   return NODEFS.createNode(parent, name, mode);
+  },
+  mknod: (parent, name, mode, dev) => {
+   var node = NODEFS.createNode(parent, name, mode, dev);
+   var path = NODEFS.realPath(node);
+   try {
+    if (FS.isDir(node.mode)) {
+     fs.mkdirSync(path, node.mode);
+    } else {
+     fs.writeFileSync(path, "", {
+      mode: node.mode
+     });
+    }
+   } catch (e) {
+    if (!e.code) throw e;
+    throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
    }
-   FS.chmod(path, entry["mode"]);
-   FS.utime(path, entry["timestamp"], entry["timestamp"]);
-  } catch (e) {
-   return callback(e);
-  }
-  callback(null);
- },
- removeLocalEntry: (path, callback) => {
-  try {
-   var lookup = FS.lookupPath(path);
-   var stat = FS.stat(path);
-   if (FS.isDir(stat.mode)) {
-    FS.rmdir(path);
-   } else if (FS.isFile(stat.mode)) {
-    FS.unlink(path);
+   return node;
+  },
+  rename: (oldNode, newDir, newName) => {
+   var oldPath = NODEFS.realPath(oldNode);
+   var newPath = PATH.join2(NODEFS.realPath(newDir), newName);
+   try {
+    fs.renameSync(oldPath, newPath);
+   } catch (e) {
+    if (!e.code) throw e;
+    throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
    }
-  } catch (e) {
-   return callback(e);
-  }
-  callback(null);
- },
- loadRemoteEntry: (store, path, callback) => {
-  var req = store.get(path);
-  req.onsuccess = (event => {
-   callback(null, event.target.result);
-  });
-  req.onerror = (e => {
-   callback(this.error);
-   e.preventDefault();
-  });
- },
- storeRemoteEntry: (store, path, entry, callback) => {
-  try {
-   var req = store.put(entry, path);
-  } catch (e) {
-   callback(e);
-   return;
-  }
-  req.onsuccess = (() => {
-   callback(null);
-  });
-  req.onerror = (e => {
-   callback(this.error);
-   e.preventDefault();
-  });
- },
- removeRemoteEntry: (store, path, callback) => {
-  var req = store.delete(path);
-  req.onsuccess = (() => {
-   callback(null);
-  });
-  req.onerror = (e => {
-   callback(this.error);
-   e.preventDefault();
-  });
- },
- reconcile: (src, dst, callback) => {
-  var total = 0;
-  var create = [];
-  Object.keys(src.entries).forEach(function(key) {
-   var e = src.entries[key];
-   var e2 = dst.entries[key];
-   if (!e2 || e["timestamp"].getTime() != e2["timestamp"].getTime()) {
-    create.push(key);
-    total++;
+   oldNode.name = newName;
+  },
+  unlink: (parent, name) => {
+   var path = PATH.join2(NODEFS.realPath(parent), name);
+   try {
+    fs.unlinkSync(path);
+   } catch (e) {
+    if (!e.code) throw e;
+    throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
    }
-  });
-  var remove = [];
-  Object.keys(dst.entries).forEach(function(key) {
-   if (!src.entries[key]) {
-    remove.push(key);
-    total++;
+  },
+  rmdir: (parent, name) => {
+   var path = PATH.join2(NODEFS.realPath(parent), name);
+   try {
+    fs.rmdirSync(path);
+   } catch (e) {
+    if (!e.code) throw e;
+    throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
    }
-  });
-  if (!total) {
-   return callback(null);
-  }
-  var errored = false;
-  var db = src.type === "remote" ? src.db : dst.db;
-  var transaction = db.transaction([ IDBFS.DB_STORE_NAME ], "readwrite");
-  var store = transaction.objectStore(IDBFS.DB_STORE_NAME);
-  function done(err) {
-   if (err && !errored) {
-    errored = true;
-    return callback(err);
+  },
+  readdir: node => {
+   var path = NODEFS.realPath(node);
+   try {
+    return fs.readdirSync(path);
+   } catch (e) {
+    if (!e.code) throw e;
+    throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
+   }
+  },
+  symlink: (parent, newName, oldPath) => {
+   var newPath = PATH.join2(NODEFS.realPath(parent), newName);
+   try {
+    fs.symlinkSync(oldPath, newPath);
+   } catch (e) {
+    if (!e.code) throw e;
+    throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
+   }
+  },
+  readlink: node => {
+   var path = NODEFS.realPath(node);
+   try {
+    path = fs.readlinkSync(path);
+    path = nodePath.relative(nodePath.resolve(node.mount.opts.root), path);
+    return path;
+   } catch (e) {
+    if (!e.code) throw e;
+    if (e.code === "UNKNOWN") throw new FS.ErrnoError(28);
+    throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
    }
   }
-  transaction.onerror = (e => {
-   done(this.error);
-   e.preventDefault();
-  });
-  transaction.oncomplete = (e => {
-   if (!errored) {
-    callback(null);
+ },
+ stream_ops: {
+  open: stream => {
+   var path = NODEFS.realPath(stream.node);
+   try {
+    if (FS.isFile(stream.node.mode)) {
+     stream.nfd = fs.openSync(path, NODEFS.flagsForNode(stream.flags));
+    }
+   } catch (e) {
+    if (!e.code) throw e;
+    throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
    }
-  });
-  create.sort().forEach(path => {
-   if (dst.type === "local") {
-    IDBFS.loadRemoteEntry(store, path, (err, entry) => {
-     if (err) return done(err);
-     IDBFS.storeLocalEntry(path, entry, done);
-    });
-   } else {
-    IDBFS.loadLocalEntry(path, (err, entry) => {
-     if (err) return done(err);
-     IDBFS.storeRemoteEntry(store, path, entry, done);
-    });
+  },
+  close: stream => {
+   try {
+    if (FS.isFile(stream.node.mode) && stream.nfd) {
+     fs.closeSync(stream.nfd);
+    }
+   } catch (e) {
+    if (!e.code) throw e;
+    throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
    }
-  });
-  remove.sort().reverse().forEach(path => {
-   if (dst.type === "local") {
-    IDBFS.removeLocalEntry(path, done);
-   } else {
-    IDBFS.removeRemoteEntry(store, path, done);
+  },
+  read: (stream, buffer, offset, length, position) => {
+   if (length === 0) return 0;
+   try {
+    return fs.readSync(stream.nfd, Buffer.from(buffer.buffer), offset, length, position);
+   } catch (e) {
+    throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
    }
-  });
+  },
+  write: (stream, buffer, offset, length, position) => {
+   try {
+    return fs.writeSync(stream.nfd, Buffer.from(buffer.buffer), offset, length, position);
+   } catch (e) {
+    throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
+   }
+  },
+  llseek: (stream, offset, whence) => {
+   var position = offset;
+   if (whence === 1) {
+    position += stream.position;
+   } else if (whence === 2) {
+    if (FS.isFile(stream.node.mode)) {
+     try {
+      var stat = fs.fstatSync(stream.nfd);
+      position += stat.size;
+     } catch (e) {
+      throw new FS.ErrnoError(NODEFS.convertNodeCode(e));
+     }
+    }
+   }
+   if (position < 0) {
+    throw new FS.ErrnoError(28);
+   }
+   return position;
+  },
+  mmap: (stream, length, position, prot, flags) => {
+   if (!FS.isFile(stream.node.mode)) {
+    throw new FS.ErrnoError(43);
+   }
+   var ptr = mmapAlloc(length);
+   NODEFS.stream_ops.read(stream, HEAP8, ptr, length, position);
+   return {
+    ptr: ptr,
+    allocated: true
+   };
+  },
+  msync: (stream, buffer, offset, length, mmapFlags) => {
+   if (!FS.isFile(stream.node.mode)) {
+    throw new FS.ErrnoError(43);
+   }
+   if (mmapFlags & 2) {
+    return 0;
+   }
+   var bytesWritten = NODEFS.stream_ops.write(stream, buffer, 0, length, offset, false);
+   return 0;
+  }
  }
 };
 
@@ -2362,8 +2331,6 @@ var ERRNO_MESSAGES = {
  148: "No medium (in tape drive)",
  156: "Level 2 not synchronized"
 };
-
-var ERRNO_CODES = {};
 
 var FS = {
  root: null,
@@ -2615,8 +2582,11 @@ var FS = {
  getStream: fd => FS.streams[fd],
  createStream: (stream, fd_start, fd_end) => {
   if (!FS.FSStream) {
-   FS.FSStream = function() {};
-   FS.FSStream.prototype = {
+   FS.FSStream = function() {
+    this.shared = {};
+   };
+   FS.FSStream.prototype = {};
+   Object.defineProperties(FS.FSStream.prototype, {
     object: {
      get: function() {
       return this.node;
@@ -2639,8 +2609,24 @@ var FS = {
      get: function() {
       return this.flags & 1024;
      }
+    },
+    flags: {
+     get: function() {
+      return this.shared.flags;
+     },
+     set: function(val) {
+      this.shared.flags = val;
+     }
+    },
+    position: {
+     get: function() {
+      return this.shared.position;
+     },
+     set: function(val) {
+      this.shared.position = val;
+     }
     }
-   };
+   });
   }
   stream = Object.assign(new FS.FSStream(), stream);
   var fd = FS.nextfd(fd_start, fd_end);
@@ -3107,7 +3093,7 @@ var FS = {
    timestamp: Math.max(atime, mtime)
   });
  },
- open: (path, flags, mode, fd_start, fd_end) => {
+ open: (path, flags, mode) => {
   if (path === "") {
    throw new FS.ErrnoError(44);
   }
@@ -3156,7 +3142,7 @@ var FS = {
     throw new FS.ErrnoError(errCode);
    }
   }
-  if (flags & 512) {
+  if (flags & 512 && !created) {
    FS.truncate(node, 0);
   }
   flags &= ~(128 | 512 | 131072);
@@ -3169,7 +3155,7 @@ var FS = {
    stream_ops: node.stream_ops,
    ungotten: [],
    error: false
-  }, fd_start, fd_end);
+  });
   if (stream.stream_ops.open) {
    stream.stream_ops.open(stream);
   }
@@ -3289,8 +3275,7 @@ var FS = {
   }
   stream.stream_ops.allocate(stream, offset, length);
  },
- mmap: (stream, address, length, position, prot, flags) => {
-  address >>>= 0;
+ mmap: (stream, length, position, prot, flags) => {
   if ((prot & 2) !== 0 && (flags & 2) === 0 && (stream.flags & 2097155) !== 2) {
    throw new FS.ErrnoError(2);
   }
@@ -3300,7 +3285,7 @@ var FS = {
   if (!stream.stream_ops.mmap) {
    throw new FS.ErrnoError(43);
   }
-  return stream.stream_ops.mmap(stream, address, length, position, prot, flags);
+  return stream.stream_ops.mmap(stream, length, position, prot, flags);
  },
  msync: (stream, buffer, offset, length, mmapFlags) => {
   offset >>>= 0;
@@ -3480,7 +3465,7 @@ var FS = {
   FS.createSpecialDirectories();
   FS.filesystems = {
    "MEMFS": MEMFS,
-   "IDBFS": IDBFS
+   "NODEFS": NODEFS
   };
  },
  init: (input, output, error) => {
@@ -3494,7 +3479,7 @@ var FS = {
  },
  quit: () => {
   FS.init.initialized = false;
-  ___stdio_exit();
+  _fflush(0);
   for (var i = 0; i < FS.streams.length; i++) {
    var stream = FS.streams[i];
    if (!stream) {
@@ -3783,8 +3768,7 @@ var FS = {
     return fn.apply(null, arguments);
    };
   });
-  stream_ops.read = ((stream, buffer, offset, length, position) => {
-   FS.forceLoadFile(node);
+  function writeChunks(stream, buffer, offset, length, position) {
    var contents = stream.node.contents;
    if (position >= contents.length) return 0;
    var size = Math.min(contents.length - position, length);
@@ -3799,7 +3783,23 @@ var FS = {
     }
    }
    return size;
-  });
+  }
+  stream_ops.read = (stream, buffer, offset, length, position) => {
+   FS.forceLoadFile(node);
+   return writeChunks(stream, buffer, offset, length, position);
+  };
+  stream_ops.mmap = (stream, length, position, prot, flags) => {
+   FS.forceLoadFile(node);
+   var ptr = mmapAlloc(length);
+   if (!ptr) {
+    throw new FS.ErrnoError(48);
+   }
+   writeChunks(stream, HEAP8, ptr, length, position);
+   return {
+    ptr: ptr,
+    allocated: true
+   };
+  };
   node.stream_ops = stream_ops;
   return node;
  },
@@ -3847,12 +3847,12 @@ var FS = {
   } catch (e) {
    return onerror(e);
   }
-  openRequest.onupgradeneeded = (() => {
+  openRequest.onupgradeneeded = () => {
    out("creating db");
    var db = openRequest.result;
    db.createObjectStore(FS.DB_STORE_NAME);
-  });
-  openRequest.onsuccess = (() => {
+  };
+  openRequest.onsuccess = () => {
    var db = openRequest.result;
    var transaction = db.transaction([ FS.DB_STORE_NAME ], "readwrite");
    var files = transaction.objectStore(FS.DB_STORE_NAME);
@@ -3862,17 +3862,17 @@ var FS = {
    }
    paths.forEach(path => {
     var putRequest = files.put(FS.analyzePath(path).object.contents, path);
-    putRequest.onsuccess = (() => {
+    putRequest.onsuccess = () => {
      ok++;
      if (ok + fail == total) finish();
-    });
-    putRequest.onerror = (() => {
+    };
+    putRequest.onerror = () => {
      fail++;
      if (ok + fail == total) finish();
-    });
+    };
    });
    transaction.onerror = onerror;
-  });
+  };
   openRequest.onerror = onerror;
  },
  loadFilesFromDB: (paths, onload, onerror) => {
@@ -3885,7 +3885,7 @@ var FS = {
    return onerror(e);
   }
   openRequest.onupgradeneeded = onerror;
-  openRequest.onsuccess = (() => {
+  openRequest.onsuccess = () => {
    var db = openRequest.result;
    try {
     var transaction = db.transaction([ FS.DB_STORE_NAME ], "readonly");
@@ -3900,21 +3900,21 @@ var FS = {
    }
    paths.forEach(path => {
     var getRequest = files.get(path);
-    getRequest.onsuccess = (() => {
+    getRequest.onsuccess = () => {
      if (FS.analyzePath(path).exists) {
       FS.unlink(path);
      }
      FS.createDataFile(PATH.dirname(path), PATH.basename(path), getRequest.result, true, true, true);
      ok++;
      if (ok + fail == total) finish();
-    });
-    getRequest.onerror = (() => {
+    };
+    getRequest.onerror = () => {
      fail++;
      if (ok + fail == total) finish();
-    });
+    };
    });
    transaction.onerror = onerror;
-  });
+  };
   openRequest.onerror = onerror;
  },
  absolutePath: () => {
@@ -3940,7 +3940,7 @@ var FS = {
 var SYSCALLS = {
  DEFAULT_POLLMASK: 5,
  calculateAt: function(dirfd, path, allowEmpty) {
-  if (path[0] === "/") {
+  if (PATH.isAbs(path)) {
    return path;
   }
   var dir;
@@ -3995,79 +3995,6 @@ var SYSCALLS = {
   var buffer = HEAPU8.slice(addr, addr + len);
   FS.msync(stream, buffer, offset, len, flags);
  },
- doMkdir: function(path, mode) {
-  path = PATH.normalize(path);
-  if (path[path.length - 1] === "/") path = path.substr(0, path.length - 1);
-  FS.mkdir(path, mode, 0);
-  return 0;
- },
- doMknod: function(path, mode, dev) {
-  switch (mode & 61440) {
-  case 32768:
-  case 8192:
-  case 24576:
-  case 4096:
-  case 49152:
-   break;
-
-  default:
-   return -28;
-  }
-  FS.mknod(path, mode, dev);
-  return 0;
- },
- doReadlink: function(path, buf, bufsize) {
-  if (bufsize <= 0) return -28;
-  var ret = FS.readlink(path);
-  var len = Math.min(bufsize, lengthBytesUTF8(ret));
-  var endChar = HEAP8[buf + len >>> 0];
-  stringToUTF8(ret, buf, bufsize + 1);
-  HEAP8[buf + len >>> 0] = endChar;
-  return len;
- },
- doAccess: function(path, amode) {
-  if (amode & ~7) {
-   return -28;
-  }
-  var lookup = FS.lookupPath(path, {
-   follow: true
-  });
-  var node = lookup.node;
-  if (!node) {
-   return -44;
-  }
-  var perms = "";
-  if (amode & 4) perms += "r";
-  if (amode & 2) perms += "w";
-  if (amode & 1) perms += "x";
-  if (perms && FS.nodePermissions(node, perms)) {
-   return -2;
-  }
-  return 0;
- },
- doReadv: function(stream, iov, iovcnt, offset) {
-  var ret = 0;
-  for (var i = 0; i < iovcnt; i++) {
-   var ptr = HEAP32[iov + i * 8 >>> 2];
-   var len = HEAP32[iov + (i * 8 + 4) >>> 2];
-   var curr = FS.read(stream, HEAP8, ptr, len, offset);
-   if (curr < 0) return -1;
-   ret += curr;
-   if (curr < len) break;
-  }
-  return ret;
- },
- doWritev: function(stream, iov, iovcnt, offset) {
-  var ret = 0;
-  for (var i = 0; i < iovcnt; i++) {
-   var ptr = HEAP32[iov + i * 8 >>> 2];
-   var len = HEAP32[iov + (i * 8 + 4) >>> 2];
-   var curr = FS.write(stream, HEAP8, ptr, len, offset);
-   if (curr < 0) return -1;
-   ret += curr;
-  }
-  return ret;
- },
  varargs: undefined,
  get: function() {
   assert(SYSCALLS.varargs != undefined);
@@ -4083,10 +4010,6 @@ var SYSCALLS = {
   var stream = FS.getStream(fd);
   if (!stream) throw new FS.ErrnoError(8);
   return stream;
- },
- get64: function(low, high) {
-  if (low >= 0) assert(high === 0); else assert(high === -1);
-  return low;
  }
 };
 
@@ -4102,7 +4025,7 @@ function ___syscall_fcntl64(fd, cmd, varargs) {
      return -28;
     }
     var newStream;
-    newStream = FS.open(stream.path, stream.flags, 0, arg);
+    newStream = FS.createStream(stream, arg);
     return newStream.fd;
    }
 
@@ -4497,7 +4420,7 @@ var Emval = {
 };
 
 function simpleReadValueFromPointer(pointer) {
- return this["fromWireType"](HEAPU32[pointer >>> 2]);
+ return this["fromWireType"](HEAP32[pointer >>> 2]);
 }
 
 function __embind_register_emval(rawType, name) {
@@ -4518,7 +4441,7 @@ function __embind_register_emval(rawType, name) {
  });
 }
 
-function _embind_repr(v) {
+function embindRepr(v) {
  if (v === null) {
   return "null";
  }
@@ -4557,7 +4480,7 @@ function __embind_register_float(rawType, name, size) {
   },
   "toWireType": function(destructors, value) {
    if (typeof value != "number" && typeof value != "boolean") {
-    throw new TypeError('Cannot convert "' + _embind_repr(value) + '" to ' + this.name);
+    throw new TypeError('Cannot convert "' + embindRepr(value) + '" to ' + this.name);
    }
    return value;
   },
@@ -4681,7 +4604,7 @@ function exposePublicSymbol(name, value, numArguments) {
 function heap32VectorToArray(count, firstElement) {
  var array = [];
  for (var i = 0; i < count; i++) {
-  array.push(HEAP32[(firstElement >> 2) + i >>> 0]);
+  array.push(HEAPU32[firstElement + i * 4 >>> 2]);
  }
  return array;
 }
@@ -4709,16 +4632,29 @@ function dynCallLegacy(sig, ptr, args) {
  return args && args.length ? f.apply(null, [ ptr ].concat(args)) : f.call(null, ptr);
 }
 
+var wasmTableMirror = [];
+
+function getWasmTableEntry(funcPtr) {
+ var func = wasmTableMirror[funcPtr];
+ if (!func) {
+  if (funcPtr >= wasmTableMirror.length) wasmTableMirror.length = funcPtr + 1;
+  wasmTableMirror[funcPtr] = func = wasmTable.get(funcPtr);
+ }
+ assert(wasmTable.get(funcPtr) == func, "JavaScript-side Wasm function table mirror is out of date!");
+ return func;
+}
+
 function dynCall(sig, ptr, args) {
  if (sig.includes("j")) {
   return dynCallLegacy(sig, ptr, args);
  }
  assert(getWasmTableEntry(ptr), "missing table entry in dynCall: " + ptr);
- return getWasmTableEntry(ptr).apply(null, args);
+ var rtn = getWasmTableEntry(ptr).apply(null, args);
+ return rtn;
 }
 
 function getDynCaller(sig, ptr) {
- assert(sig.includes("j"), "getDynCaller should only be called with i64 sigs");
+ assert(sig.includes("j") || sig.includes("p"), "getDynCaller should only be called with i64 sigs");
  var argCache = [];
  return function() {
   argCache.length = 0;
@@ -4823,15 +4759,15 @@ function __embind_register_integer(primitiveType, name, size, minRange, maxRange
  var fromWireType = value => value;
  if (minRange === 0) {
   var bitshift = 32 - 8 * size;
-  fromWireType = (value => value << bitshift >>> bitshift);
+  fromWireType = value => value << bitshift >>> bitshift;
  }
  var isUnsignedType = name.includes("unsigned");
  var checkAssertions = (value, toTypeName) => {
   if (typeof value != "number" && typeof value != "boolean") {
-   throw new TypeError('Cannot convert "' + _embind_repr(value) + '" to ' + toTypeName);
+   throw new TypeError('Cannot convert "' + embindRepr(value) + '" to ' + toTypeName);
   }
   if (value < minRange || value > maxRange) {
-   throw new TypeError('Passing a number "' + _embind_repr(value) + '" from JS side to C/C++ side to an argument of type "' + name + '", which is outside the valid range [' + minRange + ", " + maxRange + "]!");
+   throw new TypeError('Passing a number "' + embindRepr(value) + '" from JS side to C/C++ side to an argument of type "' + name + '", which is outside the valid range [' + minRange + ", " + maxRange + "]!");
   }
  };
  var toWireType;
@@ -4884,11 +4820,12 @@ function __embind_register_std_string(rawType, name) {
   name: name,
   "fromWireType": function(value) {
    var length = HEAPU32[value >>> 2];
+   var payload = value + 4;
    var str;
    if (stdStringIsUTF8) {
-    var decodeStartPtr = value + 4;
+    var decodeStartPtr = payload;
     for (var i = 0; i <= length; ++i) {
-     var currentBytePtr = value + 4 + i;
+     var currentBytePtr = payload + i;
      if (i == length || HEAPU8[currentBytePtr >>> 0] == 0) {
       var maxRead = currentBytePtr - decodeStartPtr;
       var stringSegment = UTF8ToString(decodeStartPtr, maxRead);
@@ -4904,7 +4841,7 @@ function __embind_register_std_string(rawType, name) {
    } else {
     var a = new Array(length);
     for (var i = 0; i < length; ++i) {
-     a[i] = String.fromCharCode(HEAPU8[value + 4 + i >>> 0]);
+     a[i] = String.fromCharCode(HEAPU8[payload + i >>> 0]);
     }
     str = a.join("");
    }
@@ -4915,22 +4852,22 @@ function __embind_register_std_string(rawType, name) {
    if (value instanceof ArrayBuffer) {
     value = new Uint8Array(value);
    }
-   var getLength;
+   var length;
    var valueIsOfTypeString = typeof value == "string";
    if (!(valueIsOfTypeString || value instanceof Uint8Array || value instanceof Uint8ClampedArray || value instanceof Int8Array)) {
     throwBindingError("Cannot pass non-string to std::string");
    }
    if (stdStringIsUTF8 && valueIsOfTypeString) {
-    getLength = (() => lengthBytesUTF8(value));
+    length = lengthBytesUTF8(value);
    } else {
-    getLength = (() => value.length);
+    length = value.length;
    }
-   var length = getLength();
-   var ptr = _malloc(4 + length + 1);
+   var base = _malloc(4 + length + 1);
+   var ptr = base + 4;
    ptr >>>= 0;
-   HEAPU32[ptr >>> 2] = length;
+   HEAPU32[base >>> 2] = length;
    if (stdStringIsUTF8 && valueIsOfTypeString) {
-    stringToUTF8(value, ptr + 4, length + 1);
+    stringToUTF8(value, ptr, length + 1);
    } else {
     if (valueIsOfTypeString) {
      for (var i = 0; i < length; ++i) {
@@ -4939,18 +4876,18 @@ function __embind_register_std_string(rawType, name) {
        _free(ptr);
        throwBindingError("String has UTF-16 code units that do not fit in 8 bits");
       }
-      HEAPU8[ptr + 4 + i >>> 0] = charCode;
+      HEAPU8[ptr + i >>> 0] = charCode;
      }
     } else {
      for (var i = 0; i < length; ++i) {
-      HEAPU8[ptr + 4 + i >>> 0] = value[i];
+      HEAPU8[ptr + i >>> 0] = value[i];
      }
     }
    }
    if (destructors !== null) {
-    destructors.push(_free, ptr);
+    destructors.push(_free, base);
    }
-   return ptr;
+   return base;
   },
   "argPackAdvance": 8,
   "readValueFromPointer": simpleReadValueFromPointer,
@@ -4967,13 +4904,13 @@ function __embind_register_std_wstring(rawType, charSize, name) {
   decodeString = UTF16ToString;
   encodeString = stringToUTF16;
   lengthBytesUTF = lengthBytesUTF16;
-  getHeap = (() => HEAPU16);
+  getHeap = () => HEAPU16;
   shift = 1;
  } else if (charSize === 4) {
   decodeString = UTF32ToString;
   encodeString = stringToUTF32;
   lengthBytesUTF = lengthBytesUTF32;
-  getHeap = (() => HEAPU32);
+  getHeap = () => HEAPU32;
   shift = 2;
  }
  registerType(rawType, {
@@ -5045,7 +4982,7 @@ function _emscripten_memcpy_big(dest, src, num) {
  HEAPU8.copyWithin(dest >>> 0, src >>> 0, src + num >>> 0);
 }
 
-function _emscripten_get_heap_max() {
+function getHeapMax() {
  return 4294901760;
 }
 
@@ -5063,7 +5000,7 @@ function _emscripten_resize_heap(requestedSize) {
  var oldSize = HEAPU8.length;
  requestedSize = requestedSize >>> 0;
  assert(requestedSize > oldSize);
- var maxHeapSize = _emscripten_get_heap_max();
+ var maxHeapSize = getHeapMax();
  if (requestedSize > maxHeapSize) {
   err("Cannot enlarge memory, asked to go up to " + requestedSize + " bytes, but the limit is " + maxHeapSize + " bytes!");
   return false;
@@ -5116,7 +5053,7 @@ function _environ_get(__environ, environ_buf) {
  var bufSize = 0;
  getEnvStrings().forEach(function(string, i) {
   var ptr = environ_buf + bufSize;
-  HEAP32[__environ + i * 4 >>> 2] = ptr;
+  HEAPU32[__environ + i * 4 >>> 2] = ptr;
   writeAsciiToMemory(string, ptr);
   bufSize += string.length + 1;
  });
@@ -5125,12 +5062,12 @@ function _environ_get(__environ, environ_buf) {
 
 function _environ_sizes_get(penviron_count, penviron_buf_size) {
  var strings = getEnvStrings();
- HEAP32[penviron_count >>> 2] = strings.length;
+ HEAPU32[penviron_count >>> 2] = strings.length;
  var bufSize = 0;
  strings.forEach(function(string) {
   bufSize += string.length + 1;
  });
- HEAP32[penviron_buf_size >>> 2] = bufSize;
+ HEAPU32[penviron_buf_size >>> 2] = bufSize;
  return 0;
 }
 
@@ -5145,10 +5082,24 @@ function _fd_close(fd) {
  }
 }
 
+function doReadv(stream, iov, iovcnt, offset) {
+ var ret = 0;
+ for (var i = 0; i < iovcnt; i++) {
+  var ptr = HEAPU32[iov >>> 2];
+  var len = HEAPU32[iov + 4 >>> 2];
+  iov += 8;
+  var curr = FS.read(stream, HEAP8, ptr, len, offset);
+  if (curr < 0) return -1;
+  ret += curr;
+  if (curr < len) break;
+ }
+ return ret;
+}
+
 function _fd_read(fd, iov, iovcnt, pnum) {
  try {
   var stream = SYSCALLS.getStreamFromFD(fd);
-  var num = SYSCALLS.doReadv(stream, iov, iovcnt);
+  var num = doReadv(stream, iov, iovcnt);
   HEAP32[pnum >>> 2] = num;
   return 0;
  } catch (e) {
@@ -5157,15 +5108,17 @@ function _fd_read(fd, iov, iovcnt, pnum) {
  }
 }
 
+function convertI32PairToI53Checked(lo, hi) {
+ assert(lo == lo >>> 0 || lo == (lo | 0));
+ assert(hi === (hi | 0));
+ return hi + 2097152 >>> 0 < 4194305 - !!lo ? (lo >>> 0) + hi * 4294967296 : NaN;
+}
+
 function _fd_seek(fd, offset_low, offset_high, whence, newOffset) {
  try {
+  var offset = convertI32PairToI53Checked(offset_low, offset_high);
+  if (isNaN(offset)) return 61;
   var stream = SYSCALLS.getStreamFromFD(fd);
-  var HIGH_OFFSET = 4294967296;
-  var offset = offset_high * HIGH_OFFSET + (offset_low >>> 0);
-  var DOUBLE_LIMIT = 9007199254740992;
-  if (offset <= -DOUBLE_LIMIT || offset >= DOUBLE_LIMIT) {
-   return -61;
-  }
   FS.llseek(stream, offset, whence);
   tempI64 = [ stream.position >>> 0, (tempDouble = stream.position, +Math.abs(tempDouble) >= 1 ? tempDouble > 0 ? (Math.min(+Math.floor(tempDouble / 4294967296), 4294967295) | 0) >>> 0 : ~~+Math.ceil((tempDouble - +(~~tempDouble >>> 0)) / 4294967296) >>> 0 : 0) ], 
   HEAP32[newOffset >>> 2] = tempI64[0], HEAP32[newOffset + 4 >>> 2] = tempI64[1];
@@ -5177,11 +5130,24 @@ function _fd_seek(fd, offset_low, offset_high, whence, newOffset) {
  }
 }
 
+function doWritev(stream, iov, iovcnt, offset) {
+ var ret = 0;
+ for (var i = 0; i < iovcnt; i++) {
+  var ptr = HEAPU32[iov >>> 2];
+  var len = HEAPU32[iov + 4 >>> 2];
+  iov += 8;
+  var curr = FS.write(stream, HEAP8, ptr, len, offset);
+  if (curr < 0) return -1;
+  ret += curr;
+ }
+ return ret;
+}
+
 function _fd_write(fd, iov, iovcnt, pnum) {
  try {
   var stream = SYSCALLS.getStreamFromFD(fd);
-  var num = SYSCALLS.doWritev(stream, iov, iovcnt);
-  HEAP32[pnum >>> 2] = num;
+  var num = doWritev(stream, iov, iovcnt);
+  HEAPU32[pnum >>> 2] = num;
   return 0;
  } catch (e) {
   if (typeof FS == "undefined" || !(e instanceof FS.ErrnoError)) throw e;
@@ -5533,11 +5499,16 @@ Module["FS_createDataFile"] = FS.createDataFile;
 
 Module["FS_createPreloadedFile"] = FS.createPreloadedFile;
 
+Module["FS_unlink"] = FS.unlink;
+
 Module["FS_createLazyFile"] = FS.createLazyFile;
 
 Module["FS_createDevice"] = FS.createDevice;
 
-Module["FS_unlink"] = FS.unlink;
+if (ENVIRONMENT_IS_NODE) {
+ requireNodeFS();
+ NODEFS.staticInit();
+}
 
 ERRNO_CODES = {
  "EPERM": 63,
@@ -5753,7 +5724,10 @@ function checkIncomingModuleAPI() {
 }
 
 var asmLibraryArg = {
+ "MountWebFilesystem": MountWebFilesystem,
  "__assert_fail": ___assert_fail,
+ "__cxa_allocate_exception": ___cxa_allocate_exception,
+ "__cxa_throw": ___cxa_throw,
  "__syscall_fcntl64": ___syscall_fcntl64,
  "__syscall_ioctl": ___syscall_ioctl,
  "__syscall_openat": ___syscall_openat,
@@ -5790,7 +5764,7 @@ var __Z9get_widthv = Module["__Z9get_widthv"] = createExportWrapper("_Z9get_widt
 
 var __Z10get_heightv = Module["__Z10get_heightv"] = createExportWrapper("_Z10get_heightv");
 
-var _main = Module["_main"] = createExportWrapper("main");
+var _main = Module["_main"] = createExportWrapper("__main_argc_argv");
 
 var ___getTypeName = Module["___getTypeName"] = createExportWrapper("__getTypeName");
 
@@ -5798,7 +5772,7 @@ var ___embind_register_native_and_builtin_types = Module["___embind_register_nat
 
 var ___errno_location = Module["___errno_location"] = createExportWrapper("__errno_location");
 
-var ___stdio_exit = Module["___stdio_exit"] = createExportWrapper("__stdio_exit");
+var _fflush = Module["_fflush"] = createExportWrapper("fflush");
 
 var _malloc = Module["_malloc"] = createExportWrapper("malloc");
 
@@ -5826,6 +5800,8 @@ var stackRestore = Module["stackRestore"] = createExportWrapper("stackRestore");
 
 var stackAlloc = Module["stackAlloc"] = createExportWrapper("stackAlloc");
 
+var ___cxa_is_pointer_type = Module["___cxa_is_pointer_type"] = createExportWrapper("__cxa_is_pointer_type");
+
 var dynCall_jiji = Module["dynCall_jiji"] = createExportWrapper("dynCall_jiji");
 
 var dynCall_iiiiij = Module["dynCall_iiiiij"] = createExportWrapper("dynCall_iiiiij");
@@ -5836,53 +5812,41 @@ var dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = createExportWrapper("dynCall
 
 var dynCall_viijii = Module["dynCall_viijii"] = createExportWrapper("dynCall_viijii");
 
-unexportedRuntimeFunction("intArrayFromString", false);
+unexportedRuntimeSymbol("ALLOC_NORMAL", false);
 
-unexportedRuntimeFunction("intArrayToString", false);
+unexportedRuntimeSymbol("ALLOC_STACK", false);
 
-unexportedRuntimeFunction("ccall", false);
+unexportedRuntimeSymbol("ccall", false);
 
-unexportedRuntimeFunction("cwrap", false);
+unexportedRuntimeSymbol("cwrap", false);
 
-unexportedRuntimeFunction("setValue", false);
+unexportedRuntimeSymbol("allocate", false);
 
-unexportedRuntimeFunction("getValue", false);
+unexportedRuntimeSymbol("UTF8ArrayToString", false);
 
-unexportedRuntimeFunction("allocate", false);
+Module["UTF8ToString"] = UTF8ToString;
 
-unexportedRuntimeFunction("UTF8ArrayToString", false);
+unexportedRuntimeSymbol("stringToUTF8Array", false);
 
-unexportedRuntimeFunction("UTF8ToString", false);
+unexportedRuntimeSymbol("stringToUTF8", false);
 
-unexportedRuntimeFunction("stringToUTF8Array", false);
+unexportedRuntimeSymbol("lengthBytesUTF8", false);
 
-unexportedRuntimeFunction("stringToUTF8", false);
+unexportedRuntimeSymbol("addOnPreRun", false);
 
-unexportedRuntimeFunction("lengthBytesUTF8", false);
+unexportedRuntimeSymbol("addOnInit", false);
 
-unexportedRuntimeFunction("stackTrace", false);
+unexportedRuntimeSymbol("addOnPreMain", false);
 
-unexportedRuntimeFunction("addOnPreRun", false);
+unexportedRuntimeSymbol("addOnExit", false);
 
-unexportedRuntimeFunction("addOnInit", false);
-
-unexportedRuntimeFunction("addOnPreMain", false);
-
-unexportedRuntimeFunction("addOnExit", false);
-
-unexportedRuntimeFunction("addOnPostRun", false);
-
-unexportedRuntimeFunction("writeStringToMemory", false);
-
-unexportedRuntimeFunction("writeArrayToMemory", false);
-
-unexportedRuntimeFunction("writeAsciiToMemory", false);
+unexportedRuntimeSymbol("addOnPostRun", false);
 
 Module["addRunDependency"] = addRunDependency;
 
 Module["removeRunDependency"] = removeRunDependency;
 
-unexportedRuntimeFunction("FS_createFolder", false);
+unexportedRuntimeSymbol("FS_createFolder", false);
 
 Module["FS_createPath"] = FS.createPath;
 
@@ -5892,583 +5856,941 @@ Module["FS_createPreloadedFile"] = FS.createPreloadedFile;
 
 Module["FS_createLazyFile"] = FS.createLazyFile;
 
-unexportedRuntimeFunction("FS_createLink", false);
+unexportedRuntimeSymbol("FS_createLink", false);
 
 Module["FS_createDevice"] = FS.createDevice;
 
 Module["FS_unlink"] = FS.unlink;
 
-unexportedRuntimeFunction("getLEB", false);
+unexportedRuntimeSymbol("getLEB", false);
 
-unexportedRuntimeFunction("getFunctionTables", false);
+unexportedRuntimeSymbol("getFunctionTables", false);
 
-unexportedRuntimeFunction("alignFunctionTables", false);
+unexportedRuntimeSymbol("alignFunctionTables", false);
 
-unexportedRuntimeFunction("registerFunctions", false);
+unexportedRuntimeSymbol("registerFunctions", false);
 
-unexportedRuntimeFunction("addFunction", false);
+unexportedRuntimeSymbol("prettyPrint", false);
 
-unexportedRuntimeFunction("removeFunction", false);
+unexportedRuntimeSymbol("getCompilerSetting", false);
 
-unexportedRuntimeFunction("getFuncWrapper", false);
+unexportedRuntimeSymbol("print", false);
 
-unexportedRuntimeFunction("prettyPrint", false);
+unexportedRuntimeSymbol("printErr", false);
 
-unexportedRuntimeFunction("dynCall", false);
+unexportedRuntimeSymbol("getTempRet0", false);
 
-unexportedRuntimeFunction("getCompilerSetting", false);
+unexportedRuntimeSymbol("setTempRet0", false);
 
-unexportedRuntimeFunction("print", false);
+unexportedRuntimeSymbol("callMain", false);
 
-unexportedRuntimeFunction("printErr", false);
+unexportedRuntimeSymbol("abort", false);
 
-unexportedRuntimeFunction("getTempRet0", false);
+unexportedRuntimeSymbol("keepRuntimeAlive", false);
 
-unexportedRuntimeFunction("setTempRet0", false);
+unexportedRuntimeSymbol("wasmMemory", false);
 
-unexportedRuntimeFunction("callMain", false);
+unexportedRuntimeSymbol("stackSave", false);
 
-unexportedRuntimeFunction("abort", false);
+unexportedRuntimeSymbol("stackRestore", false);
 
-unexportedRuntimeFunction("keepRuntimeAlive", false);
+unexportedRuntimeSymbol("stackAlloc", false);
 
-unexportedRuntimeFunction("zeroMemory", false);
+unexportedRuntimeSymbol("run", false);
 
-unexportedRuntimeFunction("stringToNewUTF8", false);
+unexportedRuntimeSymbol("warnOnce", false);
 
-unexportedRuntimeFunction("emscripten_realloc_buffer", false);
+unexportedRuntimeSymbol("AsciiToString", false);
 
-unexportedRuntimeFunction("ENV", false);
+unexportedRuntimeSymbol("stringToAscii", false);
 
-unexportedRuntimeFunction("ERRNO_CODES", false);
+unexportedRuntimeSymbol("UTF16ToString", false);
 
-unexportedRuntimeFunction("ERRNO_MESSAGES", false);
+unexportedRuntimeSymbol("stringToUTF16", false);
 
-unexportedRuntimeFunction("setErrNo", false);
+unexportedRuntimeSymbol("lengthBytesUTF16", false);
 
-unexportedRuntimeFunction("inetPton4", false);
+unexportedRuntimeSymbol("UTF32ToString", false);
 
-unexportedRuntimeFunction("inetNtop4", false);
+unexportedRuntimeSymbol("stringToUTF32", false);
 
-unexportedRuntimeFunction("inetPton6", false);
+unexportedRuntimeSymbol("lengthBytesUTF32", false);
 
-unexportedRuntimeFunction("inetNtop6", false);
+unexportedRuntimeSymbol("allocateUTF8", false);
 
-unexportedRuntimeFunction("readSockaddr", false);
+unexportedRuntimeSymbol("allocateUTF8OnStack", false);
 
-unexportedRuntimeFunction("writeSockaddr", false);
+unexportedRuntimeSymbol("ExitStatus", false);
 
-unexportedRuntimeFunction("DNS", false);
+unexportedRuntimeSymbol("intArrayFromString", false);
 
-unexportedRuntimeFunction("getHostByName", false);
+unexportedRuntimeSymbol("intArrayToString", false);
 
-unexportedRuntimeFunction("Protocols", false);
+unexportedRuntimeSymbol("writeStringToMemory", false);
 
-unexportedRuntimeFunction("Sockets", false);
+unexportedRuntimeSymbol("writeArrayToMemory", false);
 
-unexportedRuntimeFunction("getRandomDevice", false);
-
-unexportedRuntimeFunction("traverseStack", false);
-
-unexportedRuntimeFunction("UNWIND_CACHE", false);
-
-unexportedRuntimeFunction("convertPCtoSourceLocation", false);
-
-unexportedRuntimeFunction("readAsmConstArgsArray", false);
-
-unexportedRuntimeFunction("readAsmConstArgs", false);
-
-unexportedRuntimeFunction("mainThreadEM_ASM", false);
-
-unexportedRuntimeFunction("jstoi_q", false);
-
-unexportedRuntimeFunction("jstoi_s", false);
-
-unexportedRuntimeFunction("getExecutableName", false);
-
-unexportedRuntimeFunction("listenOnce", false);
-
-unexportedRuntimeFunction("autoResumeAudioContext", false);
-
-unexportedRuntimeFunction("dynCallLegacy", false);
-
-unexportedRuntimeFunction("getDynCaller", false);
-
-unexportedRuntimeFunction("dynCall", false);
-
-unexportedRuntimeFunction("handleException", false);
-
-unexportedRuntimeFunction("runtimeKeepalivePush", false);
-
-unexportedRuntimeFunction("runtimeKeepalivePop", false);
-
-unexportedRuntimeFunction("callUserCallback", false);
-
-unexportedRuntimeFunction("maybeExit", false);
-
-unexportedRuntimeFunction("safeSetTimeout", false);
-
-unexportedRuntimeFunction("asmjsMangle", false);
-
-unexportedRuntimeFunction("asyncLoad", false);
-
-unexportedRuntimeFunction("alignMemory", false);
-
-unexportedRuntimeFunction("mmapAlloc", false);
-
-unexportedRuntimeFunction("reallyNegative", false);
-
-unexportedRuntimeFunction("unSign", false);
-
-unexportedRuntimeFunction("reSign", false);
-
-unexportedRuntimeFunction("formatString", false);
-
-unexportedRuntimeFunction("PATH", false);
-
-unexportedRuntimeFunction("PATH_FS", false);
-
-unexportedRuntimeFunction("SYSCALLS", false);
-
-unexportedRuntimeFunction("getSocketFromFD", false);
-
-unexportedRuntimeFunction("getSocketAddress", false);
-
-unexportedRuntimeFunction("JSEvents", false);
-
-unexportedRuntimeFunction("registerKeyEventCallback", false);
-
-unexportedRuntimeFunction("specialHTMLTargets", false);
-
-unexportedRuntimeFunction("maybeCStringToJsString", false);
-
-unexportedRuntimeFunction("findEventTarget", false);
-
-unexportedRuntimeFunction("findCanvasEventTarget", false);
-
-unexportedRuntimeFunction("getBoundingClientRect", false);
-
-unexportedRuntimeFunction("fillMouseEventData", false);
-
-unexportedRuntimeFunction("registerMouseEventCallback", false);
-
-unexportedRuntimeFunction("registerWheelEventCallback", false);
-
-unexportedRuntimeFunction("registerUiEventCallback", false);
-
-unexportedRuntimeFunction("registerFocusEventCallback", false);
-
-unexportedRuntimeFunction("fillDeviceOrientationEventData", false);
-
-unexportedRuntimeFunction("registerDeviceOrientationEventCallback", false);
-
-unexportedRuntimeFunction("fillDeviceMotionEventData", false);
-
-unexportedRuntimeFunction("registerDeviceMotionEventCallback", false);
-
-unexportedRuntimeFunction("screenOrientation", false);
-
-unexportedRuntimeFunction("fillOrientationChangeEventData", false);
-
-unexportedRuntimeFunction("registerOrientationChangeEventCallback", false);
-
-unexportedRuntimeFunction("fillFullscreenChangeEventData", false);
-
-unexportedRuntimeFunction("registerFullscreenChangeEventCallback", false);
-
-unexportedRuntimeFunction("registerRestoreOldStyle", false);
-
-unexportedRuntimeFunction("hideEverythingExceptGivenElement", false);
-
-unexportedRuntimeFunction("restoreHiddenElements", false);
-
-unexportedRuntimeFunction("setLetterbox", false);
-
-unexportedRuntimeFunction("currentFullscreenStrategy", false);
-
-unexportedRuntimeFunction("restoreOldWindowedStyle", false);
-
-unexportedRuntimeFunction("softFullscreenResizeWebGLRenderTarget", false);
-
-unexportedRuntimeFunction("doRequestFullscreen", false);
-
-unexportedRuntimeFunction("fillPointerlockChangeEventData", false);
-
-unexportedRuntimeFunction("registerPointerlockChangeEventCallback", false);
-
-unexportedRuntimeFunction("registerPointerlockErrorEventCallback", false);
-
-unexportedRuntimeFunction("requestPointerLock", false);
-
-unexportedRuntimeFunction("fillVisibilityChangeEventData", false);
-
-unexportedRuntimeFunction("registerVisibilityChangeEventCallback", false);
-
-unexportedRuntimeFunction("registerTouchEventCallback", false);
-
-unexportedRuntimeFunction("fillGamepadEventData", false);
-
-unexportedRuntimeFunction("registerGamepadEventCallback", false);
-
-unexportedRuntimeFunction("registerBeforeUnloadEventCallback", false);
-
-unexportedRuntimeFunction("fillBatteryEventData", false);
-
-unexportedRuntimeFunction("battery", false);
-
-unexportedRuntimeFunction("registerBatteryEventCallback", false);
-
-unexportedRuntimeFunction("setCanvasElementSize", false);
-
-unexportedRuntimeFunction("getCanvasElementSize", false);
-
-unexportedRuntimeFunction("demangle", false);
-
-unexportedRuntimeFunction("demangleAll", false);
-
-unexportedRuntimeFunction("jsStackTrace", false);
-
-unexportedRuntimeFunction("stackTrace", false);
-
-unexportedRuntimeFunction("getEnvStrings", false);
-
-unexportedRuntimeFunction("checkWasiClock", false);
-
-unexportedRuntimeFunction("writeI53ToI64", false);
-
-unexportedRuntimeFunction("writeI53ToI64Clamped", false);
-
-unexportedRuntimeFunction("writeI53ToI64Signaling", false);
-
-unexportedRuntimeFunction("writeI53ToU64Clamped", false);
-
-unexportedRuntimeFunction("writeI53ToU64Signaling", false);
-
-unexportedRuntimeFunction("readI53FromI64", false);
-
-unexportedRuntimeFunction("readI53FromU64", false);
-
-unexportedRuntimeFunction("convertI32PairToI53", false);
-
-unexportedRuntimeFunction("convertU32PairToI53", false);
-
-unexportedRuntimeFunction("setImmediateWrapped", false);
-
-unexportedRuntimeFunction("clearImmediateWrapped", false);
-
-unexportedRuntimeFunction("polyfillSetImmediate", false);
-
-unexportedRuntimeFunction("uncaughtExceptionCount", false);
-
-unexportedRuntimeFunction("exceptionLast", false);
-
-unexportedRuntimeFunction("exceptionCaught", false);
-
-unexportedRuntimeFunction("ExceptionInfo", false);
-
-unexportedRuntimeFunction("CatchInfo", false);
-
-unexportedRuntimeFunction("exception_addRef", false);
-
-unexportedRuntimeFunction("exception_decRef", false);
-
-unexportedRuntimeFunction("Browser", false);
-
-unexportedRuntimeFunction("funcWrappers", false);
-
-unexportedRuntimeFunction("getFuncWrapper", false);
-
-unexportedRuntimeFunction("setMainLoop", false);
-
-unexportedRuntimeFunction("wget", false);
-
-unexportedRuntimeFunction("FS", false);
-
-unexportedRuntimeFunction("MEMFS", false);
-
-unexportedRuntimeFunction("TTY", false);
-
-unexportedRuntimeFunction("PIPEFS", false);
-
-unexportedRuntimeFunction("SOCKFS", false);
-
-unexportedRuntimeFunction("_setNetworkCallback", false);
-
-unexportedRuntimeFunction("tempFixedLengthArray", false);
-
-unexportedRuntimeFunction("miniTempWebGLFloatBuffers", false);
-
-unexportedRuntimeFunction("heapObjectForWebGLType", false);
-
-unexportedRuntimeFunction("heapAccessShiftForWebGLHeap", false);
-
-unexportedRuntimeFunction("GL", false);
-
-unexportedRuntimeFunction("emscriptenWebGLGet", false);
-
-unexportedRuntimeFunction("computeUnpackAlignedImageSize", false);
-
-unexportedRuntimeFunction("emscriptenWebGLGetTexPixelData", false);
-
-unexportedRuntimeFunction("emscriptenWebGLGetUniform", false);
-
-unexportedRuntimeFunction("webglGetUniformLocation", false);
-
-unexportedRuntimeFunction("webglPrepareUniformLocationsBeforeFirstUse", false);
-
-unexportedRuntimeFunction("webglGetLeftBracePos", false);
-
-unexportedRuntimeFunction("emscriptenWebGLGetVertexAttrib", false);
-
-unexportedRuntimeFunction("writeGLArray", false);
-
-unexportedRuntimeFunction("AL", false);
-
-unexportedRuntimeFunction("SDL_unicode", false);
-
-unexportedRuntimeFunction("SDL_ttfContext", false);
-
-unexportedRuntimeFunction("SDL_audio", false);
-
-unexportedRuntimeFunction("SDL", false);
-
-unexportedRuntimeFunction("SDL_gfx", false);
-
-unexportedRuntimeFunction("GLUT", false);
-
-unexportedRuntimeFunction("EGL", false);
-
-unexportedRuntimeFunction("GLFW_Window", false);
-
-unexportedRuntimeFunction("GLFW", false);
-
-unexportedRuntimeFunction("GLEW", false);
-
-unexportedRuntimeFunction("IDBStore", false);
-
-unexportedRuntimeFunction("runAndAbortIfError", false);
-
-unexportedRuntimeFunction("InternalError", false);
-
-unexportedRuntimeFunction("BindingError", false);
-
-unexportedRuntimeFunction("UnboundTypeError", false);
-
-unexportedRuntimeFunction("PureVirtualError", false);
-
-unexportedRuntimeFunction("init_embind", false);
-
-unexportedRuntimeFunction("throwInternalError", false);
-
-unexportedRuntimeFunction("throwBindingError", false);
-
-unexportedRuntimeFunction("throwUnboundTypeError", false);
-
-unexportedRuntimeFunction("ensureOverloadTable", false);
-
-unexportedRuntimeFunction("exposePublicSymbol", false);
-
-unexportedRuntimeFunction("replacePublicSymbol", false);
-
-unexportedRuntimeFunction("extendError", false);
-
-unexportedRuntimeFunction("createNamedFunction", false);
-
-unexportedRuntimeFunction("registeredInstances", false);
-
-unexportedRuntimeFunction("getBasestPointer", false);
-
-unexportedRuntimeFunction("registerInheritedInstance", false);
-
-unexportedRuntimeFunction("unregisterInheritedInstance", false);
-
-unexportedRuntimeFunction("getInheritedInstance", false);
-
-unexportedRuntimeFunction("getInheritedInstanceCount", false);
-
-unexportedRuntimeFunction("getLiveInheritedInstances", false);
-
-unexportedRuntimeFunction("registeredTypes", false);
-
-unexportedRuntimeFunction("awaitingDependencies", false);
-
-unexportedRuntimeFunction("typeDependencies", false);
-
-unexportedRuntimeFunction("registeredPointers", false);
-
-unexportedRuntimeFunction("registerType", false);
-
-unexportedRuntimeFunction("whenDependentTypesAreResolved", false);
-
-unexportedRuntimeFunction("embind_charCodes", false);
-
-unexportedRuntimeFunction("embind_init_charCodes", false);
-
-unexportedRuntimeFunction("readLatin1String", false);
-
-unexportedRuntimeFunction("getTypeName", false);
-
-unexportedRuntimeFunction("heap32VectorToArray", false);
-
-unexportedRuntimeFunction("requireRegisteredType", false);
-
-unexportedRuntimeFunction("getShiftFromSize", false);
-
-unexportedRuntimeFunction("integerReadValueFromPointer", false);
-
-unexportedRuntimeFunction("enumReadValueFromPointer", false);
-
-unexportedRuntimeFunction("floatReadValueFromPointer", false);
-
-unexportedRuntimeFunction("simpleReadValueFromPointer", false);
-
-unexportedRuntimeFunction("runDestructors", false);
-
-unexportedRuntimeFunction("new_", false);
-
-unexportedRuntimeFunction("craftInvokerFunction", false);
-
-unexportedRuntimeFunction("embind__requireFunction", false);
-
-unexportedRuntimeFunction("tupleRegistrations", false);
-
-unexportedRuntimeFunction("structRegistrations", false);
-
-unexportedRuntimeFunction("genericPointerToWireType", false);
-
-unexportedRuntimeFunction("constNoSmartPtrRawPointerToWireType", false);
-
-unexportedRuntimeFunction("nonConstNoSmartPtrRawPointerToWireType", false);
-
-unexportedRuntimeFunction("init_RegisteredPointer", false);
-
-unexportedRuntimeFunction("RegisteredPointer", false);
-
-unexportedRuntimeFunction("RegisteredPointer_getPointee", false);
-
-unexportedRuntimeFunction("RegisteredPointer_destructor", false);
-
-unexportedRuntimeFunction("RegisteredPointer_deleteObject", false);
-
-unexportedRuntimeFunction("RegisteredPointer_fromWireType", false);
-
-unexportedRuntimeFunction("runDestructor", false);
-
-unexportedRuntimeFunction("releaseClassHandle", false);
-
-unexportedRuntimeFunction("finalizationRegistry", false);
-
-unexportedRuntimeFunction("detachFinalizer_deps", false);
-
-unexportedRuntimeFunction("detachFinalizer", false);
-
-unexportedRuntimeFunction("attachFinalizer", false);
-
-unexportedRuntimeFunction("makeClassHandle", false);
-
-unexportedRuntimeFunction("init_ClassHandle", false);
-
-unexportedRuntimeFunction("ClassHandle", false);
-
-unexportedRuntimeFunction("ClassHandle_isAliasOf", false);
-
-unexportedRuntimeFunction("throwInstanceAlreadyDeleted", false);
-
-unexportedRuntimeFunction("ClassHandle_clone", false);
-
-unexportedRuntimeFunction("ClassHandle_delete", false);
-
-unexportedRuntimeFunction("deletionQueue", false);
-
-unexportedRuntimeFunction("ClassHandle_isDeleted", false);
-
-unexportedRuntimeFunction("ClassHandle_deleteLater", false);
-
-unexportedRuntimeFunction("flushPendingDeletes", false);
-
-unexportedRuntimeFunction("delayFunction", false);
-
-unexportedRuntimeFunction("setDelayFunction", false);
-
-unexportedRuntimeFunction("RegisteredClass", false);
-
-unexportedRuntimeFunction("shallowCopyInternalPointer", false);
-
-unexportedRuntimeFunction("downcastPointer", false);
-
-unexportedRuntimeFunction("upcastPointer", false);
-
-unexportedRuntimeFunction("validateThis", false);
-
-unexportedRuntimeFunction("char_0", false);
-
-unexportedRuntimeFunction("char_9", false);
-
-unexportedRuntimeFunction("makeLegalFunctionName", false);
-
-unexportedRuntimeFunction("emval_handle_array", false);
-
-unexportedRuntimeFunction("emval_free_list", false);
-
-unexportedRuntimeFunction("emval_symbols", false);
-
-unexportedRuntimeFunction("init_emval", false);
-
-unexportedRuntimeFunction("count_emval_handles", false);
-
-unexportedRuntimeFunction("get_first_emval", false);
-
-unexportedRuntimeFunction("getStringOrSymbol", false);
-
-unexportedRuntimeFunction("Emval", false);
-
-unexportedRuntimeFunction("emval_newers", false);
-
-unexportedRuntimeFunction("craftEmvalAllocator", false);
-
-unexportedRuntimeFunction("emval_get_global", false);
-
-unexportedRuntimeFunction("emval_methodCallers", false);
-
-unexportedRuntimeFunction("emval_registeredMethods", false);
-
-unexportedRuntimeFunction("IDBFS", false);
-
-unexportedRuntimeFunction("warnOnce", false);
-
-unexportedRuntimeFunction("stackSave", false);
-
-unexportedRuntimeFunction("stackRestore", false);
-
-unexportedRuntimeFunction("stackAlloc", false);
-
-unexportedRuntimeFunction("AsciiToString", false);
-
-unexportedRuntimeFunction("stringToAscii", false);
-
-unexportedRuntimeFunction("UTF16ToString", false);
-
-unexportedRuntimeFunction("stringToUTF16", false);
-
-unexportedRuntimeFunction("lengthBytesUTF16", false);
-
-unexportedRuntimeFunction("UTF32ToString", false);
-
-unexportedRuntimeFunction("stringToUTF32", false);
-
-unexportedRuntimeFunction("lengthBytesUTF32", false);
-
-unexportedRuntimeFunction("allocateUTF8", false);
-
-unexportedRuntimeFunction("allocateUTF8OnStack", false);
+unexportedRuntimeSymbol("writeAsciiToMemory", false);
 
 Module["writeStackCookie"] = writeStackCookie;
 
 Module["checkStackCookie"] = checkStackCookie;
 
-unexportedRuntimeSymbol("ALLOC_NORMAL", false);
+unexportedRuntimeSymbol("ptrToString", false);
 
-unexportedRuntimeSymbol("ALLOC_STACK", false);
+unexportedRuntimeSymbol("zeroMemory", false);
+
+unexportedRuntimeSymbol("stringToNewUTF8", false);
+
+unexportedRuntimeSymbol("getHeapMax", false);
+
+unexportedRuntimeSymbol("emscripten_realloc_buffer", false);
+
+unexportedRuntimeSymbol("ENV", false);
+
+unexportedRuntimeSymbol("ERRNO_CODES", false);
+
+unexportedRuntimeSymbol("ERRNO_MESSAGES", false);
+
+unexportedRuntimeSymbol("setErrNo", false);
+
+unexportedRuntimeSymbol("inetPton4", false);
+
+unexportedRuntimeSymbol("inetNtop4", false);
+
+unexportedRuntimeSymbol("inetPton6", false);
+
+unexportedRuntimeSymbol("inetNtop6", false);
+
+unexportedRuntimeSymbol("readSockaddr", false);
+
+unexportedRuntimeSymbol("writeSockaddr", false);
+
+unexportedRuntimeSymbol("DNS", false);
+
+unexportedRuntimeSymbol("getHostByName", false);
+
+unexportedRuntimeSymbol("Protocols", false);
+
+unexportedRuntimeSymbol("Sockets", false);
+
+unexportedRuntimeSymbol("getRandomDevice", false);
+
+unexportedRuntimeSymbol("traverseStack", false);
+
+unexportedRuntimeSymbol("UNWIND_CACHE", false);
+
+unexportedRuntimeSymbol("convertPCtoSourceLocation", false);
+
+unexportedRuntimeSymbol("readAsmConstArgsArray", false);
+
+unexportedRuntimeSymbol("readAsmConstArgs", false);
+
+unexportedRuntimeSymbol("mainThreadEM_ASM", false);
+
+unexportedRuntimeSymbol("jstoi_q", false);
+
+unexportedRuntimeSymbol("jstoi_s", false);
+
+unexportedRuntimeSymbol("getExecutableName", false);
+
+unexportedRuntimeSymbol("listenOnce", false);
+
+unexportedRuntimeSymbol("autoResumeAudioContext", false);
+
+unexportedRuntimeSymbol("dynCallLegacy", false);
+
+unexportedRuntimeSymbol("getDynCaller", false);
+
+unexportedRuntimeSymbol("dynCall", false);
+
+unexportedRuntimeSymbol("handleException", false);
+
+unexportedRuntimeSymbol("runtimeKeepalivePush", false);
+
+unexportedRuntimeSymbol("runtimeKeepalivePop", false);
+
+unexportedRuntimeSymbol("callUserCallback", false);
+
+unexportedRuntimeSymbol("maybeExit", false);
+
+unexportedRuntimeSymbol("safeSetTimeout", false);
+
+unexportedRuntimeSymbol("asmjsMangle", false);
+
+unexportedRuntimeSymbol("asyncLoad", false);
+
+unexportedRuntimeSymbol("alignMemory", false);
+
+unexportedRuntimeSymbol("mmapAlloc", false);
+
+unexportedRuntimeSymbol("writeI53ToI64", false);
+
+unexportedRuntimeSymbol("writeI53ToI64Clamped", false);
+
+unexportedRuntimeSymbol("writeI53ToI64Signaling", false);
+
+unexportedRuntimeSymbol("writeI53ToU64Clamped", false);
+
+unexportedRuntimeSymbol("writeI53ToU64Signaling", false);
+
+unexportedRuntimeSymbol("readI53FromI64", false);
+
+unexportedRuntimeSymbol("readI53FromU64", false);
+
+unexportedRuntimeSymbol("convertI32PairToI53", false);
+
+unexportedRuntimeSymbol("convertI32PairToI53Checked", false);
+
+unexportedRuntimeSymbol("convertU32PairToI53", false);
+
+unexportedRuntimeSymbol("uleb128Encode", false);
+
+unexportedRuntimeSymbol("sigToWasmTypes", false);
+
+unexportedRuntimeSymbol("convertJsFunctionToWasm", false);
+
+unexportedRuntimeSymbol("freeTableIndexes", false);
+
+unexportedRuntimeSymbol("functionsInTableMap", false);
+
+unexportedRuntimeSymbol("getEmptyTableSlot", false);
+
+unexportedRuntimeSymbol("updateTableMap", false);
+
+unexportedRuntimeSymbol("addFunction", false);
+
+unexportedRuntimeSymbol("removeFunction", false);
+
+unexportedRuntimeSymbol("reallyNegative", false);
+
+unexportedRuntimeSymbol("unSign", false);
+
+unexportedRuntimeSymbol("strLen", false);
+
+unexportedRuntimeSymbol("reSign", false);
+
+unexportedRuntimeSymbol("formatString", false);
+
+unexportedRuntimeSymbol("setValue", false);
+
+unexportedRuntimeSymbol("getValue", false);
+
+unexportedRuntimeSymbol("PATH", false);
+
+unexportedRuntimeSymbol("PATH_FS", false);
+
+unexportedRuntimeSymbol("SYSCALLS", false);
+
+unexportedRuntimeSymbol("getSocketFromFD", false);
+
+unexportedRuntimeSymbol("getSocketAddress", false);
+
+unexportedRuntimeSymbol("JSEvents", false);
+
+unexportedRuntimeSymbol("registerKeyEventCallback", false);
+
+unexportedRuntimeSymbol("specialHTMLTargets", false);
+
+unexportedRuntimeSymbol("maybeCStringToJsString", false);
+
+unexportedRuntimeSymbol("findEventTarget", false);
+
+unexportedRuntimeSymbol("findCanvasEventTarget", false);
+
+unexportedRuntimeSymbol("getBoundingClientRect", false);
+
+unexportedRuntimeSymbol("fillMouseEventData", false);
+
+unexportedRuntimeSymbol("registerMouseEventCallback", false);
+
+unexportedRuntimeSymbol("registerWheelEventCallback", false);
+
+unexportedRuntimeSymbol("registerUiEventCallback", false);
+
+unexportedRuntimeSymbol("registerFocusEventCallback", false);
+
+unexportedRuntimeSymbol("fillDeviceOrientationEventData", false);
+
+unexportedRuntimeSymbol("registerDeviceOrientationEventCallback", false);
+
+unexportedRuntimeSymbol("fillDeviceMotionEventData", false);
+
+unexportedRuntimeSymbol("registerDeviceMotionEventCallback", false);
+
+unexportedRuntimeSymbol("screenOrientation", false);
+
+unexportedRuntimeSymbol("fillOrientationChangeEventData", false);
+
+unexportedRuntimeSymbol("registerOrientationChangeEventCallback", false);
+
+unexportedRuntimeSymbol("fillFullscreenChangeEventData", false);
+
+unexportedRuntimeSymbol("registerFullscreenChangeEventCallback", false);
+
+unexportedRuntimeSymbol("JSEvents_requestFullscreen", false);
+
+unexportedRuntimeSymbol("JSEvents_resizeCanvasForFullscreen", false);
+
+unexportedRuntimeSymbol("registerRestoreOldStyle", false);
+
+unexportedRuntimeSymbol("hideEverythingExceptGivenElement", false);
+
+unexportedRuntimeSymbol("restoreHiddenElements", false);
+
+unexportedRuntimeSymbol("setLetterbox", false);
+
+unexportedRuntimeSymbol("currentFullscreenStrategy", false);
+
+unexportedRuntimeSymbol("restoreOldWindowedStyle", false);
+
+unexportedRuntimeSymbol("softFullscreenResizeWebGLRenderTarget", false);
+
+unexportedRuntimeSymbol("doRequestFullscreen", false);
+
+unexportedRuntimeSymbol("fillPointerlockChangeEventData", false);
+
+unexportedRuntimeSymbol("registerPointerlockChangeEventCallback", false);
+
+unexportedRuntimeSymbol("registerPointerlockErrorEventCallback", false);
+
+unexportedRuntimeSymbol("requestPointerLock", false);
+
+unexportedRuntimeSymbol("fillVisibilityChangeEventData", false);
+
+unexportedRuntimeSymbol("registerVisibilityChangeEventCallback", false);
+
+unexportedRuntimeSymbol("registerTouchEventCallback", false);
+
+unexportedRuntimeSymbol("fillGamepadEventData", false);
+
+unexportedRuntimeSymbol("registerGamepadEventCallback", false);
+
+unexportedRuntimeSymbol("registerBeforeUnloadEventCallback", false);
+
+unexportedRuntimeSymbol("fillBatteryEventData", false);
+
+unexportedRuntimeSymbol("battery", false);
+
+unexportedRuntimeSymbol("registerBatteryEventCallback", false);
+
+unexportedRuntimeSymbol("setCanvasElementSize", false);
+
+unexportedRuntimeSymbol("getCanvasElementSize", false);
+
+unexportedRuntimeSymbol("demangle", false);
+
+unexportedRuntimeSymbol("demangleAll", false);
+
+unexportedRuntimeSymbol("jsStackTrace", false);
+
+unexportedRuntimeSymbol("stackTrace", false);
+
+unexportedRuntimeSymbol("getEnvStrings", false);
+
+unexportedRuntimeSymbol("checkWasiClock", false);
+
+unexportedRuntimeSymbol("doReadv", false);
+
+unexportedRuntimeSymbol("doWritev", false);
+
+unexportedRuntimeSymbol("dlopenMissingError", false);
+
+unexportedRuntimeSymbol("setImmediateWrapped", false);
+
+unexportedRuntimeSymbol("clearImmediateWrapped", false);
+
+unexportedRuntimeSymbol("polyfillSetImmediate", false);
+
+unexportedRuntimeSymbol("uncaughtExceptionCount", false);
+
+unexportedRuntimeSymbol("exceptionLast", false);
+
+unexportedRuntimeSymbol("exceptionCaught", false);
+
+unexportedRuntimeSymbol("ExceptionInfo", false);
+
+unexportedRuntimeSymbol("exception_addRef", false);
+
+unexportedRuntimeSymbol("exception_decRef", false);
+
+unexportedRuntimeSymbol("Browser", false);
+
+unexportedRuntimeSymbol("setMainLoop", false);
+
+unexportedRuntimeSymbol("wget", false);
+
+unexportedRuntimeSymbol("FS", false);
+
+unexportedRuntimeSymbol("MEMFS", false);
+
+unexportedRuntimeSymbol("TTY", false);
+
+unexportedRuntimeSymbol("PIPEFS", false);
+
+unexportedRuntimeSymbol("SOCKFS", false);
+
+unexportedRuntimeSymbol("_setNetworkCallback", false);
+
+unexportedRuntimeSymbol("tempFixedLengthArray", false);
+
+unexportedRuntimeSymbol("miniTempWebGLFloatBuffers", false);
+
+unexportedRuntimeSymbol("heapObjectForWebGLType", false);
+
+unexportedRuntimeSymbol("heapAccessShiftForWebGLHeap", false);
+
+unexportedRuntimeSymbol("GL", false);
+
+unexportedRuntimeSymbol("emscriptenWebGLGet", false);
+
+unexportedRuntimeSymbol("computeUnpackAlignedImageSize", false);
+
+unexportedRuntimeSymbol("emscriptenWebGLGetTexPixelData", false);
+
+unexportedRuntimeSymbol("emscriptenWebGLGetUniform", false);
+
+unexportedRuntimeSymbol("webglGetUniformLocation", false);
+
+unexportedRuntimeSymbol("webglPrepareUniformLocationsBeforeFirstUse", false);
+
+unexportedRuntimeSymbol("webglGetLeftBracePos", false);
+
+unexportedRuntimeSymbol("emscriptenWebGLGetVertexAttrib", false);
+
+unexportedRuntimeSymbol("writeGLArray", false);
+
+unexportedRuntimeSymbol("AL", false);
+
+unexportedRuntimeSymbol("SDL_unicode", false);
+
+unexportedRuntimeSymbol("SDL_ttfContext", false);
+
+unexportedRuntimeSymbol("SDL_audio", false);
+
+unexportedRuntimeSymbol("SDL", false);
+
+unexportedRuntimeSymbol("SDL_gfx", false);
+
+unexportedRuntimeSymbol("GLUT", false);
+
+unexportedRuntimeSymbol("EGL", false);
+
+unexportedRuntimeSymbol("GLFW_Window", false);
+
+unexportedRuntimeSymbol("GLFW", false);
+
+unexportedRuntimeSymbol("GLEW", false);
+
+unexportedRuntimeSymbol("IDBStore", false);
+
+unexportedRuntimeSymbol("runAndAbortIfError", false);
+
+unexportedRuntimeSymbol("InternalError", false);
+
+unexportedRuntimeSymbol("BindingError", false);
+
+unexportedRuntimeSymbol("UnboundTypeError", false);
+
+unexportedRuntimeSymbol("PureVirtualError", false);
+
+unexportedRuntimeSymbol("init_embind", false);
+
+unexportedRuntimeSymbol("throwInternalError", false);
+
+unexportedRuntimeSymbol("throwBindingError", false);
+
+unexportedRuntimeSymbol("throwUnboundTypeError", false);
+
+unexportedRuntimeSymbol("ensureOverloadTable", false);
+
+unexportedRuntimeSymbol("exposePublicSymbol", false);
+
+unexportedRuntimeSymbol("replacePublicSymbol", false);
+
+unexportedRuntimeSymbol("extendError", false);
+
+unexportedRuntimeSymbol("createNamedFunction", false);
+
+unexportedRuntimeSymbol("embindRepr", false);
+
+unexportedRuntimeSymbol("registeredInstances", false);
+
+unexportedRuntimeSymbol("getBasestPointer", false);
+
+unexportedRuntimeSymbol("registerInheritedInstance", false);
+
+unexportedRuntimeSymbol("unregisterInheritedInstance", false);
+
+unexportedRuntimeSymbol("getInheritedInstance", false);
+
+unexportedRuntimeSymbol("getInheritedInstanceCount", false);
+
+unexportedRuntimeSymbol("getLiveInheritedInstances", false);
+
+unexportedRuntimeSymbol("registeredTypes", false);
+
+unexportedRuntimeSymbol("awaitingDependencies", false);
+
+unexportedRuntimeSymbol("typeDependencies", false);
+
+unexportedRuntimeSymbol("registeredPointers", false);
+
+unexportedRuntimeSymbol("registerType", false);
+
+unexportedRuntimeSymbol("whenDependentTypesAreResolved", false);
+
+unexportedRuntimeSymbol("embind_charCodes", false);
+
+unexportedRuntimeSymbol("embind_init_charCodes", false);
+
+unexportedRuntimeSymbol("readLatin1String", false);
+
+unexportedRuntimeSymbol("getTypeName", false);
+
+unexportedRuntimeSymbol("heap32VectorToArray", false);
+
+unexportedRuntimeSymbol("requireRegisteredType", false);
+
+unexportedRuntimeSymbol("getShiftFromSize", false);
+
+unexportedRuntimeSymbol("integerReadValueFromPointer", false);
+
+unexportedRuntimeSymbol("enumReadValueFromPointer", false);
+
+unexportedRuntimeSymbol("floatReadValueFromPointer", false);
+
+unexportedRuntimeSymbol("simpleReadValueFromPointer", false);
+
+unexportedRuntimeSymbol("runDestructors", false);
+
+unexportedRuntimeSymbol("new_", false);
+
+unexportedRuntimeSymbol("craftInvokerFunction", false);
+
+unexportedRuntimeSymbol("embind__requireFunction", false);
+
+unexportedRuntimeSymbol("tupleRegistrations", false);
+
+unexportedRuntimeSymbol("structRegistrations", false);
+
+unexportedRuntimeSymbol("genericPointerToWireType", false);
+
+unexportedRuntimeSymbol("constNoSmartPtrRawPointerToWireType", false);
+
+unexportedRuntimeSymbol("nonConstNoSmartPtrRawPointerToWireType", false);
+
+unexportedRuntimeSymbol("init_RegisteredPointer", false);
+
+unexportedRuntimeSymbol("RegisteredPointer", false);
+
+unexportedRuntimeSymbol("RegisteredPointer_getPointee", false);
+
+unexportedRuntimeSymbol("RegisteredPointer_destructor", false);
+
+unexportedRuntimeSymbol("RegisteredPointer_deleteObject", false);
+
+unexportedRuntimeSymbol("RegisteredPointer_fromWireType", false);
+
+unexportedRuntimeSymbol("runDestructor", false);
+
+unexportedRuntimeSymbol("releaseClassHandle", false);
+
+unexportedRuntimeSymbol("finalizationRegistry", false);
+
+unexportedRuntimeSymbol("detachFinalizer_deps", false);
+
+unexportedRuntimeSymbol("detachFinalizer", false);
+
+unexportedRuntimeSymbol("attachFinalizer", false);
+
+unexportedRuntimeSymbol("makeClassHandle", false);
+
+unexportedRuntimeSymbol("init_ClassHandle", false);
+
+unexportedRuntimeSymbol("ClassHandle", false);
+
+unexportedRuntimeSymbol("ClassHandle_isAliasOf", false);
+
+unexportedRuntimeSymbol("throwInstanceAlreadyDeleted", false);
+
+unexportedRuntimeSymbol("ClassHandle_clone", false);
+
+unexportedRuntimeSymbol("ClassHandle_delete", false);
+
+unexportedRuntimeSymbol("deletionQueue", false);
+
+unexportedRuntimeSymbol("ClassHandle_isDeleted", false);
+
+unexportedRuntimeSymbol("ClassHandle_deleteLater", false);
+
+unexportedRuntimeSymbol("flushPendingDeletes", false);
+
+unexportedRuntimeSymbol("delayFunction", false);
+
+unexportedRuntimeSymbol("setDelayFunction", false);
+
+unexportedRuntimeSymbol("RegisteredClass", false);
+
+unexportedRuntimeSymbol("shallowCopyInternalPointer", false);
+
+unexportedRuntimeSymbol("downcastPointer", false);
+
+unexportedRuntimeSymbol("upcastPointer", false);
+
+unexportedRuntimeSymbol("validateThis", false);
+
+unexportedRuntimeSymbol("char_0", false);
+
+unexportedRuntimeSymbol("char_9", false);
+
+unexportedRuntimeSymbol("makeLegalFunctionName", false);
+
+unexportedRuntimeSymbol("emval_handle_array", false);
+
+unexportedRuntimeSymbol("emval_free_list", false);
+
+unexportedRuntimeSymbol("emval_symbols", false);
+
+unexportedRuntimeSymbol("init_emval", false);
+
+unexportedRuntimeSymbol("count_emval_handles", false);
+
+unexportedRuntimeSymbol("get_first_emval", false);
+
+unexportedRuntimeSymbol("getStringOrSymbol", false);
+
+unexportedRuntimeSymbol("Emval", false);
+
+unexportedRuntimeSymbol("emval_newers", false);
+
+unexportedRuntimeSymbol("craftEmvalAllocator", false);
+
+unexportedRuntimeSymbol("emval_get_global", false);
+
+unexportedRuntimeSymbol("emval_lookupTypes", false);
+
+unexportedRuntimeSymbol("emval_allocateDestructors", false);
+
+unexportedRuntimeSymbol("emval_methodCallers", false);
+
+unexportedRuntimeSymbol("emval_addMethodCaller", false);
+
+unexportedRuntimeSymbol("emval_registeredMethods", false);
+
+unexportedRuntimeSymbol("NODEFS", false);
+
+var ptrToString = missingLibraryFunc("ptrToString");
+
+var stringToNewUTF8 = missingLibraryFunc("stringToNewUTF8");
+
+var inetPton4 = missingLibraryFunc("inetPton4");
+
+var inetNtop4 = missingLibraryFunc("inetNtop4");
+
+var inetPton6 = missingLibraryFunc("inetPton6");
+
+var inetNtop6 = missingLibraryFunc("inetNtop6");
+
+var readSockaddr = missingLibraryFunc("readSockaddr");
+
+var writeSockaddr = missingLibraryFunc("writeSockaddr");
+
+var getHostByName = missingLibraryFunc("getHostByName");
+
+var traverseStack = missingLibraryFunc("traverseStack");
+
+var convertPCtoSourceLocation = missingLibraryFunc("convertPCtoSourceLocation");
+
+var readAsmConstArgs = missingLibraryFunc("readAsmConstArgs");
+
+var mainThreadEM_ASM = missingLibraryFunc("mainThreadEM_ASM");
+
+var jstoi_q = missingLibraryFunc("jstoi_q");
+
+var jstoi_s = missingLibraryFunc("jstoi_s");
+
+var listenOnce = missingLibraryFunc("listenOnce");
+
+var autoResumeAudioContext = missingLibraryFunc("autoResumeAudioContext");
+
+var runtimeKeepalivePush = missingLibraryFunc("runtimeKeepalivePush");
+
+var runtimeKeepalivePop = missingLibraryFunc("runtimeKeepalivePop");
+
+var callUserCallback = missingLibraryFunc("callUserCallback");
+
+var maybeExit = missingLibraryFunc("maybeExit");
+
+var safeSetTimeout = missingLibraryFunc("safeSetTimeout");
+
+var asmjsMangle = missingLibraryFunc("asmjsMangle");
+
+var writeI53ToI64 = missingLibraryFunc("writeI53ToI64");
+
+var writeI53ToI64Clamped = missingLibraryFunc("writeI53ToI64Clamped");
+
+var writeI53ToI64Signaling = missingLibraryFunc("writeI53ToI64Signaling");
+
+var writeI53ToU64Clamped = missingLibraryFunc("writeI53ToU64Clamped");
+
+var writeI53ToU64Signaling = missingLibraryFunc("writeI53ToU64Signaling");
+
+var readI53FromI64 = missingLibraryFunc("readI53FromI64");
+
+var readI53FromU64 = missingLibraryFunc("readI53FromU64");
+
+var convertI32PairToI53 = missingLibraryFunc("convertI32PairToI53");
+
+var convertU32PairToI53 = missingLibraryFunc("convertU32PairToI53");
+
+var uleb128Encode = missingLibraryFunc("uleb128Encode");
+
+var sigToWasmTypes = missingLibraryFunc("sigToWasmTypes");
+
+var convertJsFunctionToWasm = missingLibraryFunc("convertJsFunctionToWasm");
+
+var getEmptyTableSlot = missingLibraryFunc("getEmptyTableSlot");
+
+var updateTableMap = missingLibraryFunc("updateTableMap");
+
+var addFunction = missingLibraryFunc("addFunction");
+
+var removeFunction = missingLibraryFunc("removeFunction");
+
+var reallyNegative = missingLibraryFunc("reallyNegative");
+
+var unSign = missingLibraryFunc("unSign");
+
+var strLen = missingLibraryFunc("strLen");
+
+var reSign = missingLibraryFunc("reSign");
+
+var formatString = missingLibraryFunc("formatString");
+
+var getSocketFromFD = missingLibraryFunc("getSocketFromFD");
+
+var getSocketAddress = missingLibraryFunc("getSocketAddress");
+
+var registerKeyEventCallback = missingLibraryFunc("registerKeyEventCallback");
+
+var maybeCStringToJsString = missingLibraryFunc("maybeCStringToJsString");
+
+var findEventTarget = missingLibraryFunc("findEventTarget");
+
+var findCanvasEventTarget = missingLibraryFunc("findCanvasEventTarget");
+
+var getBoundingClientRect = missingLibraryFunc("getBoundingClientRect");
+
+var fillMouseEventData = missingLibraryFunc("fillMouseEventData");
+
+var registerMouseEventCallback = missingLibraryFunc("registerMouseEventCallback");
+
+var registerWheelEventCallback = missingLibraryFunc("registerWheelEventCallback");
+
+var registerUiEventCallback = missingLibraryFunc("registerUiEventCallback");
+
+var registerFocusEventCallback = missingLibraryFunc("registerFocusEventCallback");
+
+var fillDeviceOrientationEventData = missingLibraryFunc("fillDeviceOrientationEventData");
+
+var registerDeviceOrientationEventCallback = missingLibraryFunc("registerDeviceOrientationEventCallback");
+
+var fillDeviceMotionEventData = missingLibraryFunc("fillDeviceMotionEventData");
+
+var registerDeviceMotionEventCallback = missingLibraryFunc("registerDeviceMotionEventCallback");
+
+var screenOrientation = missingLibraryFunc("screenOrientation");
+
+var fillOrientationChangeEventData = missingLibraryFunc("fillOrientationChangeEventData");
+
+var registerOrientationChangeEventCallback = missingLibraryFunc("registerOrientationChangeEventCallback");
+
+var fillFullscreenChangeEventData = missingLibraryFunc("fillFullscreenChangeEventData");
+
+var registerFullscreenChangeEventCallback = missingLibraryFunc("registerFullscreenChangeEventCallback");
+
+var JSEvents_requestFullscreen = missingLibraryFunc("JSEvents_requestFullscreen");
+
+var JSEvents_resizeCanvasForFullscreen = missingLibraryFunc("JSEvents_resizeCanvasForFullscreen");
+
+var registerRestoreOldStyle = missingLibraryFunc("registerRestoreOldStyle");
+
+var hideEverythingExceptGivenElement = missingLibraryFunc("hideEverythingExceptGivenElement");
+
+var restoreHiddenElements = missingLibraryFunc("restoreHiddenElements");
+
+var setLetterbox = missingLibraryFunc("setLetterbox");
+
+var softFullscreenResizeWebGLRenderTarget = missingLibraryFunc("softFullscreenResizeWebGLRenderTarget");
+
+var doRequestFullscreen = missingLibraryFunc("doRequestFullscreen");
+
+var fillPointerlockChangeEventData = missingLibraryFunc("fillPointerlockChangeEventData");
+
+var registerPointerlockChangeEventCallback = missingLibraryFunc("registerPointerlockChangeEventCallback");
+
+var registerPointerlockErrorEventCallback = missingLibraryFunc("registerPointerlockErrorEventCallback");
+
+var requestPointerLock = missingLibraryFunc("requestPointerLock");
+
+var fillVisibilityChangeEventData = missingLibraryFunc("fillVisibilityChangeEventData");
+
+var registerVisibilityChangeEventCallback = missingLibraryFunc("registerVisibilityChangeEventCallback");
+
+var registerTouchEventCallback = missingLibraryFunc("registerTouchEventCallback");
+
+var fillGamepadEventData = missingLibraryFunc("fillGamepadEventData");
+
+var registerGamepadEventCallback = missingLibraryFunc("registerGamepadEventCallback");
+
+var registerBeforeUnloadEventCallback = missingLibraryFunc("registerBeforeUnloadEventCallback");
+
+var fillBatteryEventData = missingLibraryFunc("fillBatteryEventData");
+
+var battery = missingLibraryFunc("battery");
+
+var registerBatteryEventCallback = missingLibraryFunc("registerBatteryEventCallback");
+
+var setCanvasElementSize = missingLibraryFunc("setCanvasElementSize");
+
+var getCanvasElementSize = missingLibraryFunc("getCanvasElementSize");
+
+var checkWasiClock = missingLibraryFunc("checkWasiClock");
+
+var setImmediateWrapped = missingLibraryFunc("setImmediateWrapped");
+
+var clearImmediateWrapped = missingLibraryFunc("clearImmediateWrapped");
+
+var polyfillSetImmediate = missingLibraryFunc("polyfillSetImmediate");
+
+var exception_addRef = missingLibraryFunc("exception_addRef");
+
+var exception_decRef = missingLibraryFunc("exception_decRef");
+
+var setMainLoop = missingLibraryFunc("setMainLoop");
+
+var _setNetworkCallback = missingLibraryFunc("_setNetworkCallback");
+
+var heapObjectForWebGLType = missingLibraryFunc("heapObjectForWebGLType");
+
+var heapAccessShiftForWebGLHeap = missingLibraryFunc("heapAccessShiftForWebGLHeap");
+
+var emscriptenWebGLGet = missingLibraryFunc("emscriptenWebGLGet");
+
+var computeUnpackAlignedImageSize = missingLibraryFunc("computeUnpackAlignedImageSize");
+
+var emscriptenWebGLGetTexPixelData = missingLibraryFunc("emscriptenWebGLGetTexPixelData");
+
+var emscriptenWebGLGetUniform = missingLibraryFunc("emscriptenWebGLGetUniform");
+
+var webglGetUniformLocation = missingLibraryFunc("webglGetUniformLocation");
+
+var webglPrepareUniformLocationsBeforeFirstUse = missingLibraryFunc("webglPrepareUniformLocationsBeforeFirstUse");
+
+var webglGetLeftBracePos = missingLibraryFunc("webglGetLeftBracePos");
+
+var emscriptenWebGLGetVertexAttrib = missingLibraryFunc("emscriptenWebGLGetVertexAttrib");
+
+var writeGLArray = missingLibraryFunc("writeGLArray");
+
+var SDL_unicode = missingLibraryFunc("SDL_unicode");
+
+var SDL_ttfContext = missingLibraryFunc("SDL_ttfContext");
+
+var SDL_audio = missingLibraryFunc("SDL_audio");
+
+var GLFW_Window = missingLibraryFunc("GLFW_Window");
+
+var runAndAbortIfError = missingLibraryFunc("runAndAbortIfError");
+
+var init_embind = missingLibraryFunc("init_embind");
+
+var getBasestPointer = missingLibraryFunc("getBasestPointer");
+
+var registerInheritedInstance = missingLibraryFunc("registerInheritedInstance");
+
+var unregisterInheritedInstance = missingLibraryFunc("unregisterInheritedInstance");
+
+var getInheritedInstance = missingLibraryFunc("getInheritedInstance");
+
+var getInheritedInstanceCount = missingLibraryFunc("getInheritedInstanceCount");
+
+var getLiveInheritedInstances = missingLibraryFunc("getLiveInheritedInstances");
+
+var requireRegisteredType = missingLibraryFunc("requireRegisteredType");
+
+var enumReadValueFromPointer = missingLibraryFunc("enumReadValueFromPointer");
+
+var genericPointerToWireType = missingLibraryFunc("genericPointerToWireType");
+
+var constNoSmartPtrRawPointerToWireType = missingLibraryFunc("constNoSmartPtrRawPointerToWireType");
+
+var nonConstNoSmartPtrRawPointerToWireType = missingLibraryFunc("nonConstNoSmartPtrRawPointerToWireType");
+
+var init_RegisteredPointer = missingLibraryFunc("init_RegisteredPointer");
+
+var RegisteredPointer = missingLibraryFunc("RegisteredPointer");
+
+var RegisteredPointer_getPointee = missingLibraryFunc("RegisteredPointer_getPointee");
+
+var RegisteredPointer_destructor = missingLibraryFunc("RegisteredPointer_destructor");
+
+var RegisteredPointer_deleteObject = missingLibraryFunc("RegisteredPointer_deleteObject");
+
+var RegisteredPointer_fromWireType = missingLibraryFunc("RegisteredPointer_fromWireType");
+
+var runDestructor = missingLibraryFunc("runDestructor");
+
+var releaseClassHandle = missingLibraryFunc("releaseClassHandle");
+
+var detachFinalizer = missingLibraryFunc("detachFinalizer");
+
+var attachFinalizer = missingLibraryFunc("attachFinalizer");
+
+var makeClassHandle = missingLibraryFunc("makeClassHandle");
+
+var init_ClassHandle = missingLibraryFunc("init_ClassHandle");
+
+var ClassHandle = missingLibraryFunc("ClassHandle");
+
+var ClassHandle_isAliasOf = missingLibraryFunc("ClassHandle_isAliasOf");
+
+var throwInstanceAlreadyDeleted = missingLibraryFunc("throwInstanceAlreadyDeleted");
+
+var ClassHandle_clone = missingLibraryFunc("ClassHandle_clone");
+
+var ClassHandle_delete = missingLibraryFunc("ClassHandle_delete");
+
+var ClassHandle_isDeleted = missingLibraryFunc("ClassHandle_isDeleted");
+
+var ClassHandle_deleteLater = missingLibraryFunc("ClassHandle_deleteLater");
+
+var flushPendingDeletes = missingLibraryFunc("flushPendingDeletes");
+
+var setDelayFunction = missingLibraryFunc("setDelayFunction");
+
+var RegisteredClass = missingLibraryFunc("RegisteredClass");
+
+var shallowCopyInternalPointer = missingLibraryFunc("shallowCopyInternalPointer");
+
+var downcastPointer = missingLibraryFunc("downcastPointer");
+
+var upcastPointer = missingLibraryFunc("upcastPointer");
+
+var validateThis = missingLibraryFunc("validateThis");
+
+var getStringOrSymbol = missingLibraryFunc("getStringOrSymbol");
+
+var craftEmvalAllocator = missingLibraryFunc("craftEmvalAllocator");
+
+var emval_get_global = missingLibraryFunc("emval_get_global");
+
+var emval_lookupTypes = missingLibraryFunc("emval_lookupTypes");
+
+var emval_allocateDestructors = missingLibraryFunc("emval_allocateDestructors");
+
+var emval_addMethodCaller = missingLibraryFunc("emval_addMethodCaller");
 
 var calledRun;
 
@@ -6490,13 +6812,14 @@ function callMain(args) {
  assert(__ATPRERUN__.length == 0, "cannot call main when preRun functions remain to be called");
  var entryFunction = Module["_main"];
  args = args || [];
- var argc = args.length + 1;
+ args.unshift(thisProgram);
+ var argc = args.length;
  var argv = stackAlloc((argc + 1) * 4);
- HEAP32[argv >>> 2] = allocateUTF8OnStack(thisProgram);
- for (var i = 1; i < argc; i++) {
-  HEAP32[(argv >> 2) + i >>> 0] = allocateUTF8OnStack(args[i - 1]);
- }
- HEAP32[(argv >> 2) + argc >>> 0] = 0;
+ var argv_ptr = argv >> 2;
+ args.forEach(arg => {
+  HEAP32[argv_ptr++ >>> 0] = allocateUTF8OnStack(arg);
+ });
+ HEAP32[argv_ptr >>> 0] = 0;
  try {
   var ret = entryFunction(argc, argv);
   exit(ret, true);
@@ -6548,17 +6871,15 @@ function run(args) {
  checkStackCookie();
 }
 
-Module["run"] = run;
-
 function checkUnflushedContent() {
  var oldOut = out;
  var oldErr = err;
  var has = false;
- out = err = (x => {
+ out = err = x => {
   has = true;
- });
+ };
  try {
-  ___stdio_exit();
+  _fflush(0);
   [ "stdout", "stderr" ].forEach(function(name) {
    var info = FS.analyzePath("/dev/" + name);
    if (!info) return;

@@ -13,9 +13,10 @@
         <button id="terminateWorkerButton" onclick="terminateWorker()">Terminate Worker</button>
         <h1>Upload a PSD</h1>
         <input type="file" id="imageFile" capture>
-        <div class="canvas-div">
+        <img src="" id="rendition">
+        <!-- <div class="canvas-div">
             <canvas id="canvas" ></canvas>
-        </div>
+        </div> -->
         <script crossorigin="true">
             let worker;
 
@@ -26,8 +27,10 @@
             async function startWorker() {
                 worker = new Worker("./index-worker.js");
                 worker.onmessage = (e) => {
-                    if(e.data.jobType == "generateRendition"){
+                    if(e.data.jobType == "handleFileInput"){
                         // TODO: code to render image on canvas
+                        console.log(e.data);
+                        drawImageOnCanvas(e.data.renditionUrl)
                     } else {
                         console.log("warning: did not do anything upon worker message")
                     }
@@ -46,14 +49,39 @@
                 worker.terminate()
             }
 
-            async function handleFileInput(e){
+            function randomNumber() {
+                return Math.floor(Math.random() * 10000);
+            }
 
+            async function handleFileInput(e){
+                console.log('change event fired for input field');
+                let file = e.target.files[0];
+                var reader = new FileReader();
+                reader.readAsArrayBuffer(file);
+                reader.onload = function (e) {
+                    console.log(e)
+                    let bits = e.target.result;
+
+                    let inputFileName = `/persistent/input-${randomNumber()}.psd`;
+                    let outputFileName = `/persistent/output-${randomNumber()}.png`;
+                    worker.postMessage({
+                        inputFileName: inputFileName,
+                        outputFileName: outputFileName,
+                        jobType: "handleFileInput",
+                        bits: bits,
+                    });
+                }
             }
 
             async function runDummyThread(e){
                 worker.postMessage({
                     jobType: "runDummyThread",
                 })
+            }
+
+            function drawImageOnCanvas(url, imageData, width, height){
+                let img = document.getElementById("rendition");
+                img.src = url;
             }
 
         </script>

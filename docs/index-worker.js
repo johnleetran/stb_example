@@ -52,24 +52,41 @@ async function workerHandleFileInput(event){
     }
 }
 
-async function generateRendition(inputFileName, outputFileName){
-    let r = await Module.generate_rendition_using_idb(inputFileName, outputFileName);
-    let width = await Module.get_width();
-    let height = await Module.get_height();
-
-    endTime = new Date();
-    let duration = endTime - startTime;
-    console.log("width: ", width, " height: ", height);
-    console.log("duration: ", duration, " milliseconds");
-    FS.syncfs(false, async (err) => {
+function load_image(e, input_type){
+    return new Promise((resolve, reject) => {
+      let inputFileName = e.data.inputFileName;
+      let bits = e.data.bits;
+      let stream = FS.open(inputFileName, 'w');
+      var array = new Int8Array(bits);
+      FS.write(stream, array, 0, array.length, 0);
+      FS.close(stream);
+  
+      FS.syncfs(false, async (err) => {
         if(err){
-            console.error("err:", err);
+          console.error("error:", err)
         }else{
-            let renditionSrc = await createURLForRendition(outputFileName, 'image/png');
-            let img = document.getElementById("rendition");
-            img.src = renditionSrc;
+            resolve(inputFileName);
         }
+      });
+    });
+}
+
+async function generateRendition(data){
+    return new Promise(async (resolve, reject) => {
+        let inputFileName = data.inputFileName;
+        let outputFileName = data.outputFileName;
+    
+        await STB.generate_rendition_using_idb(inputFileName, outputFileName);
+        FS.syncfs(false, async (err) => {
+            if(err){
+                reject(err);
+            }else{
+                let url = await createURLForRendition(outputFileName, 'image/png');
+                resolve(url);
+            }
+        })
     })
+
 }
 
 async function createURLForRendition(filename, mime){
@@ -87,8 +104,10 @@ self.onmessage = async (e) => {
     let response = { jobType: jobType };
     if(jobType == "initWorker"){
         await initWorker("/persistent");
-    } else if (jobType == "workerHandleFileInput") {
-        
+    } else if (jobType == "handleFileInput") {
+        await load_image(e, )
+        let url = await generateRendition(e.data);
+        response['renditionUrl'] = url;
     } else if(jobType == "runDummyThread"){
         runDummyThreadWorker();
     }

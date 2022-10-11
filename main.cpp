@@ -1,4 +1,7 @@
 #include <iostream>
+#include <future>
+#include <chrono>
+#include <thread>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -16,6 +19,20 @@
 
 int gWidth;
 int gHeight;
+
+int EMSCRIPTEN_KEEPALIVE my_async(){
+    auto future = std::async(std::launch::async, []{ 
+        int n = 10;
+        for(int i=0; i<n; i++){
+            std::cout << "sleep: " << i << "/" << n  << std::endl; 
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000) );
+        }
+        return 69;
+    });
+
+    int return_code = future.get();
+    return return_code;
+}
 
 int EMSCRIPTEN_KEEPALIVE generate_rendition_using_idb(std::string input_image_path, std::string output_image_path)
 {
@@ -58,6 +75,8 @@ EMSCRIPTEN_BINDINGS(generate_rendition_using_idb)
     emscripten::function("generate_rendition_using_idb", &generate_rendition_using_idb);
     emscripten::function("get_width", &get_width);
     emscripten::function("get_height", &get_height);
+    emscripten::function("my_async", &my_async);
+
 }
 #else
 int main(int argc, char* argv[]){

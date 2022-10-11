@@ -1,8 +1,19 @@
-importScripts("app.js");
+importScripts("stb.js");
+let STB = null;
+let FS = null;
+let IDBFS = null;
 
-async function stbInit(){
-    FS.mkdir(rootDir);
-    FS.mount(IDBFS, {}, rootDir)
+async function initWorker(mountDir){
+    let App = {
+        locateFile: (file) => file,
+        mainScriptUrlOrBlob: "stb.js",
+    };
+    STB = await STB_MODULE(App);
+    FS = STB.FS;
+    IDBFS = STB.IDBFS;
+
+    FS.mkdir(mountDir);
+    FS.mount(IDBFS, {}, mountDir)
     FS.syncfs(true, (err)=>{
         if(err){
             console.error(err)
@@ -10,6 +21,10 @@ async function stbInit(){
             console.log("fs loaded")
         }
     });
+}
+
+function runDummyThreadWorker(f){
+    STB.my_async();
 }
 
 async function workerHandleFileInput(event){
@@ -37,7 +52,7 @@ async function workerHandleFileInput(event){
     }
 }
 
-async function generate_rendition(inputFileName, outputFileName){
+async function generateRendition(inputFileName, outputFileName){
     let r = await Module.generate_rendition_using_idb(inputFileName, outputFileName);
     let width = await Module.get_width();
     let height = await Module.get_height();
@@ -63,19 +78,19 @@ async function createURLForRendition(filename, mime){
     return URL.createObjectURL(new Blob([content], { type: mime }));
 }
 
-self.onmessage = async (evt) => {
-    let now = new Date().valueOf();
+self.onmessage = async (e) => {
     if( !(e && e.data)){
       return;
     }
-  
 
     let jobType = e.data.jobType;
     let response = { jobType: jobType };
-    if(jobType == "stbInit"){
-        await stbInit();
+    if(jobType == "initWorker"){
+        await initWorker("/persistent");
     } else if (jobType == "workerHandleFileInput") {
         
+    } else if(jobType == "runDummyThread"){
+        runDummyThreadWorker();
     }
     self.postMessage(response);
 };

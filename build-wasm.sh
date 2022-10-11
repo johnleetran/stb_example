@@ -20,11 +20,14 @@ em++ ${wasm_optimization_level} libstb-image.a \
     -o ${app_name}.js \
     --bind \
     -lidbfs.js \
+    -s USE_PTHREADS=1 \
+    -s PROXY_TO_PTHREAD \
     -s ENVIRONMENT=web,worker \
     -s EXPORT_NAME='STB_MODULE' \
     -s MODULARIZE=1 \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s MAXIMUM_MEMORY=4GB \
-    -s FORCE_FILESYSTEM=1 
+    -s FORCE_FILESYSTEM=1 \
+    -s 'EXTRA_EXPORTED_RUNTIME_METHODS=["FS", "IDBFS"]'
 cp ${app_name}.* ../docs
 popd 

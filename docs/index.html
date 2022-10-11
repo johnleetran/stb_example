@@ -1,16 +1,60 @@
 <html>
+    <head>
+        <meta charset="utf-8">
+        <title></title>
+        <meta name="description" content="" />
+        <meta name="viewport" content="width=device-width" />
+        <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp" />
+        <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin" />
+      </head>
     <body>
-        <input type="file" id="imageFile">
-        <img id="rendition" />
-        <script>
-            let rootDir = '/persistent';
-            let startTime, endTime;
+        <button id="startWorkerButton" onclick="startWorker()">Start Worker</button>
+        <button id="runDummyThread" onclick="runDummyThread()">runDummyThread</button>
+        <button id="terminateWorkerButton" onclick="terminateWorker()">Terminate Worker</button>
+        <h1>Upload a PSD</h1>
+        <input type="file" id="imageFile" capture>
+        <div class="canvas-div">
+            <canvas id="canvas" ></canvas>
+        </div>
+        <script crossorigin="true">
+            let worker;
+
             document.addEventListener('DOMContentLoaded', () => {
                 document.querySelector('#imageFile').addEventListener('change', handleFileInput);
             });
 
+            async function startWorker() {
+                worker = new Worker("./index-worker.js");
+                worker.onmessage = (e) => {
+                    if(e.data.jobType == "generateRendition"){
+                        // TODO: code to render image on canvas
+                    } else {
+                        console.log("warning: did not do anything upon worker message")
+                    }
+                };
 
-            
+                worker.onerror = (err) => {
+                    console.log("worker errored: ", err)
+                }
+
+                worker.postMessage({
+                    jobType: "initWorker",
+                })
+            }
+
+            function terminateWorker() {
+                worker.terminate()
+            }
+
+            async function handleFileInput(e){
+
+            }
+
+            async function runDummyThread(e){
+                worker.postMessage({
+                    jobType: "runDummyThread",
+                })
+            }
 
         </script>
     </body>

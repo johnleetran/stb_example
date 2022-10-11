@@ -5,3 +5,4 @@ images
 *.jpg
 *.jpeg
 *.debug.wasm
+*node_modules*
